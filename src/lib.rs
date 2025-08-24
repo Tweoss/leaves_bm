@@ -4,4 +4,4 @@
 mod lbm;
 mod math;
 pub use lbm::{Constants, Simulation};
-pub use math::Bound3;
+pub use math::{Bound3, Float};

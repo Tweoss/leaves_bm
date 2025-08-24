@@ -4,7 +4,7 @@ mod render;
 use std::time::Duration;
 
 use bevy::{prelude::*, render::view::NoFrustumCulling};
-use leaves_bm::{Bound3, Constants, Simulation};
+use leaves_bm::{Bound3, Constants, Float, Simulation};
 
 use crate::render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData};
 
@@ -105,7 +105,10 @@ fn step_simulation(
                     .density
                     .get(Bound3::new(x as usize, y as usize, z as usize).unwrap())
                     - 1.0)
-                    / 90.0;
+                    .max(0.0)
+                    // give a bit of nonlinearity to better see values close to 1.0
+                    .sqrt()
+                    / 5.0;
                 data.color = [value, value, value, 1.0];
             }
         }
@@ -122,29 +125,18 @@ struct SimulationRes(Simulation<{ X_COUNT as usize }, { Y_COUNT as usize }, { Z_
 fn main() {
     let mut sim = Simulation::new(Constants {
         time_relaxation_constant: 0.5,
-        speed_of_sound: 1.0 / (2.0_f32).sqrt(),
-        // speed_of_sound: 1.0 / (3.0_f32).sqrt(),
+        speed_of_sound: 1.0 / (3.0_f32).sqrt(),
     });
-    for i in 0..X_COUNT {
-        for j in 0..Y_COUNT {
-            *sim.density
-                // *sim.distributions
-                //     .q0
-                .get_mut(Bound3::new(i as usize, j as usize, 2).unwrap()) = 900.0;
+    for i in 0..20 {
+        for j in 0..20 {
+            // *sim.distributions.q0.get_mut(Bound3::new(i, j, 2).unwrap()) = 10.0;
+
+            // *sim.distributions.q1[0].get_mut(Bound3::new(i, j, 2).unwrap()) = (i as Float).sqrt();
+            *sim.distributions.q1[0].get_mut(Bound3::new(i, j, 2).unwrap()) = (i as Float).sqrt();
         }
     }
-    // *sim.density.get_mut(Bound3::new(0, 3, 5).unwrap()) = 50.0;
-    // *sim.distributions.q0.get_mut(Bound3::new(0, 3, 5).unwrap()) = 60.0;
+    sim.calc_conditions();
 
-    // *sim.distributions
-    //     .q0
-    //     .get_mut(Bound3::new(10, 23, 0).unwrap()) = 50.0;
-    // sim.calc_conditions();
-    // *sim.density.get_mut(Bound3::new(18, 2, 2).unwrap()) = 1000.0;
-    // *sim.density.get_mut(Bound3::new(18, 18, 2).unwrap()) = 10.0;
-    // for _ in 0..300 {
-    //     sim.step();
-    // }
     let sim_res = SimulationRes(sim);
 
     use pan_orbit::{pan_orbit_camera, spawn_camera, PanOrbitState};
