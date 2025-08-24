@@ -1,9 +1,9 @@
 use crate::math::{lerp, Bound3, Float, Int3, Vec3};
 
-struct Lattice<const X: usize, const Y: usize, const Z: usize> {
-    q0: Box<PacketDistribution<X, Y, Z>>,
-    q1: Box<[PacketDistribution<X, Y, Z>; 6]>,
-    q2: Box<[PacketDistribution<X, Y, Z>; 12]>,
+pub struct Lattice<const X: usize, const Y: usize, const Z: usize> {
+    pub q0: Box<PacketDistribution<X, Y, Z>>,
+    pub q1: Box<[PacketDistribution<X, Y, Z>; 6]>,
+    pub q2: Box<[PacketDistribution<X, Y, Z>; 12]>,
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> Default for Lattice<X, Y, Z> {
@@ -85,7 +85,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Lattice<X, Y, Z> {
 }
 
 /// The packet distributions at each point in the lattice in a specific direction.
-struct PacketDistribution<const X: usize, const Y: usize, const Z: usize> {
+pub struct PacketDistribution<const X: usize, const Y: usize, const Z: usize> {
     values: [[[Float; Z]; Y]; X],
 }
 
@@ -98,10 +98,10 @@ impl<const X: usize, const Y: usize, const Z: usize> Default for PacketDistribut
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> PacketDistribution<X, Y, Z> {
-    fn get(&self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &Float {
+    pub fn get(&self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &Float {
         &self.values[x][y][z]
     }
-    fn get_mut(&mut self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &mut Float {
+    pub fn get_mut(&mut self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &mut Float {
         &mut self.values[x][y][z]
     }
 }
@@ -150,7 +150,7 @@ impl Default for Constants {
 }
 
 pub struct Simulation<const X: usize, const Y: usize, const Z: usize> {
-    distributions: Lattice<X, Y, Z>,
+    pub distributions: Lattice<X, Y, Z>,
     velocity: Field<X, Y, Z, Vec3>,
     pub density: Field<X, Y, Z, Float>,
     constants: Constants,
@@ -226,7 +226,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
         }
     }
 
-    fn calc_conditions(&mut self) {
+    pub fn calc_conditions(&mut self) {
         // let mut total_mass = 0.0;
         let mut total_momentum = Vec3::default();
         for x in 0..X {

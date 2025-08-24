@@ -1,16 +1,16 @@
 mod pan_orbit;
+mod render;
 
 use std::time::Duration;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, render::view::NoFrustumCulling};
 use leaves_bm::{Bound3, Constants, Simulation};
 
-#[derive(Component)]
-struct Cube {
-    x: i32,
-    y: i32,
-    z: i32,
-}
+use crate::render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData};
+
+const X_COUNT: i32 = 30;
+const Y_COUNT: i32 = 30;
+const Z_COUNT: i32 = 30;
 
 /// set up a simple 3D scene
 fn setup(
@@ -20,33 +20,44 @@ fn setup(
 ) {
     // circular base
     commands.spawn((
-        Mesh3d(meshes.add(Circle::new(4.0))),
+        Mesh3d(meshes.add(Circle::new(2.0))),
         MeshMaterial3d(materials.add(Color::WHITE)),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
     ));
     // cube
     //
-    let x_count = 20;
-    let y_count = 20;
-    let z_count = 20;
-    let box_mesh = meshes.add(Cuboid::new(0.2, 0.2, 0.2));
-    let boxes: Vec<_> = (0..x_count)
-        .flat_map(|x| (0..y_count).map(move |y| (x, y)))
-        .flat_map(|(x, y)| (0..z_count).map(move |z| (x, y, z)))
-        .map(|(x, y, z)| {
-            (
-                Cube { x, y, z },
-                Mesh3d(box_mesh.clone()),
-                MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-                Transform::from_xyz(
-                    x_count as f32 / 2.0 - x as f32,
-                    y_count as f32 / 2.0 - y as f32,
-                    z_count as f32 / 2.0 - z as f32,
-                ),
-            )
-        })
-        .collect();
-    commands.spawn_batch(boxes);
+
+    // instanced boxes
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.5, 0.5, 0.5))),
+        InstanceMaterialData(
+            (0..X_COUNT)
+                .flat_map(|x| (0..Y_COUNT).map(move |y| (x, y)))
+                .flat_map(|(x, y)| (0..Z_COUNT).map(move |z| (x, y, z)))
+                .map(|(x, y, z)| {
+                    let (x, y, z) = (x as f32, y as f32, z as f32);
+                    InstanceData {
+                        position: Vec3::new(
+                            X_COUNT as f32 / 2.0 - x,
+                            Y_COUNT as f32 / 2.0 - y,
+                            Z_COUNT as f32 / 2.0 - z,
+                        ),
+                        scale: 1.0,
+                        color: LinearRgba::from(Color::hsla(x * 360., y, 0.5, 1.0)).to_f32_array(),
+                    }
+                })
+                .collect(),
+        ),
+        // NOTE: Frustum culling is done based on the Aabb of the Mesh and the GlobalTransform.
+        // As the cube is at the origin, if its Aabb moves outside the view frustum, all the
+        // instanced cubes will be culled.
+        // The InstanceMaterialData contains the 'GlobalTransform' information for this custom
+        // instancing, and that is not taken into account with the built-in frustum culling.
+        // We must disable the built-in frustum culling by adding the `NoFrustumCulling` marker
+        // component to avoid incorrect culling.
+        NoFrustumCulling,
+    ));
+
     // light
     commands.spawn((
         DirectionalLight {
@@ -74,36 +85,31 @@ fn step_simulation(
     time: Res<Time>,
     mut timer: ResMut<SimulationTimer>,
     mut sim: ResMut<SimulationRes>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut handles: Query<(&Cube, &mut MeshMaterial3d<StandardMaterial>)>,
+    mut handles: Query<&mut InstanceMaterialData>,
 ) {
     if timer.0.tick(time.delta()).just_finished() {
         use std::time::Instant;
         let start = Instant::now();
-        // let v1 = *sim.0.density.get(Bound3::new(2, 2, 2).unwrap());
         sim.0.step();
-        // let w2 = sim.0.density.get(Bound3::new(18, 18, 2).unwrap());
         dbg!(Instant::now().duration_since(start));
-        // dbg!(Instant::now().duration_since(start), v1, w2);
 
-        let material_start = Instant::now();
-        for (cube, material) in handles.iter_mut() {
-            let material = materials.get_mut(material.id()).unwrap();
-            let color = material.base_color;
-            let mut color = color.to_linear();
-            let value = *sim
-                .0
-                .density
-                .get(Bound3::new(cube.x as usize, cube.y as usize, cube.z as usize).unwrap())
-                - 1.0;
-            // if cube.x == 2 && cube.y == 2 {
-            //     dbg!(value);
-            // }
-            color.red = value;
-            color.set_alpha(value);
-            material.base_color = color.into();
+        // let material_start = Instant::now();
+        for mut material_data in handles.iter_mut() {
+            for (i, data) in material_data.0.iter_mut().enumerate() {
+                let i = i as i32;
+                let x = i % X_COUNT;
+                let y = (i / X_COUNT) % Y_COUNT;
+                let z = i / X_COUNT / Y_COUNT;
+                let value = (*sim
+                    .0
+                    .density
+                    .get(Bound3::new(x as usize, y as usize, z as usize).unwrap())
+                    - 1.0)
+                    / 90.0;
+                data.color = [value, value, value, 1.0];
+            }
         }
-        dbg!(Instant::now().duration_since(material_start));
+        // dbg!(Instant::now().duration_since(material_start));
     }
 }
 
@@ -111,18 +117,29 @@ fn step_simulation(
 struct SimulationTimer(Timer);
 
 #[derive(Resource)]
-struct SimulationRes(Simulation<20, 20, 20>);
+struct SimulationRes(Simulation<{ X_COUNT as usize }, { Y_COUNT as usize }, { Z_COUNT as usize }>);
 
 fn main() {
     let mut sim = Simulation::new(Constants {
-        time_relaxation_constant: 0.1,
-        speed_of_sound: 1.0 / (3.0_f32).sqrt(),
+        time_relaxation_constant: 0.5,
+        speed_of_sound: 1.0 / (2.0_f32).sqrt(),
+        // speed_of_sound: 1.0 / (3.0_f32).sqrt(),
     });
-    for i in 0..20 {
-        for j in 0..20 {
-            *sim.density.get_mut(Bound3::new(i, j, 2).unwrap()) = 10.0;
+    for i in 0..X_COUNT {
+        for j in 0..Y_COUNT {
+            *sim.density
+                // *sim.distributions
+                //     .q0
+                .get_mut(Bound3::new(i as usize, j as usize, 2).unwrap()) = 900.0;
         }
     }
+    // *sim.density.get_mut(Bound3::new(0, 3, 5).unwrap()) = 50.0;
+    // *sim.distributions.q0.get_mut(Bound3::new(0, 3, 5).unwrap()) = 60.0;
+
+    // *sim.distributions
+    //     .q0
+    //     .get_mut(Bound3::new(10, 23, 0).unwrap()) = 50.0;
+    // sim.calc_conditions();
     // *sim.density.get_mut(Bound3::new(18, 2, 2).unwrap()) = 1000.0;
     // *sim.density.get_mut(Bound3::new(18, 18, 2).unwrap()) = 10.0;
     // for _ in 0..300 {
@@ -130,19 +147,21 @@ fn main() {
     // }
     let sim_res = SimulationRes(sim);
 
-    // return;
     use pan_orbit::{pan_orbit_camera, spawn_camera, PanOrbitState};
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "BLM Simulator".to_string(),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "BLM Simulator".to_string(),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }),
-            ..Default::default()
-        }))
+            CustomMaterialPlugin,
+        ))
         .insert_resource(sim_res)
         .insert_resource(SimulationTimer(Timer::new(
-            Duration::from_millis(1000),
+            Duration::from_millis(100),
             TimerMode::Repeating,
         )))
         .add_systems(Startup, spawn_camera)
