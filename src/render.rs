@@ -23,10 +23,9 @@ use bevy::{
             RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
-            AsBindGroup, Buffer, BufferInitDescriptor, BufferUsages, PipelineCache,
-            RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipeline,
-            SpecializedMeshPipelineError, SpecializedMeshPipelines, VertexAttribute, VertexFormat,
-            VertexStepMode,
+            Buffer, BufferInitDescriptor, BufferUsages, PipelineCache, RenderPipelineDescriptor,
+            SpecializedMeshPipeline, SpecializedMeshPipelineError, SpecializedMeshPipelines,
+            VertexAttribute, VertexFormat, VertexStepMode,
         },
         renderer::RenderDevice,
         sync_world::MainEntity,
@@ -37,18 +36,6 @@ use bevy::{
 use bytemuck::{Pod, Zeroable};
 
 const SHADER_ASSET_PATH: &str = "flat.wgsl";
-
-#[derive(AsBindGroup, Debug, Clone, Asset, TypePath)]
-pub struct FlatMaterial {
-    #[uniform(0)]
-    pub color: LinearRgba,
-}
-
-impl Material for FlatMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "flat.wgsl".into()
-    }
-}
 
 #[derive(Component, Deref)]
 pub struct InstanceMaterialData(pub Vec<InstanceData>);
@@ -85,7 +72,7 @@ impl Plugin for CustomMaterialPlugin {
     }
 }
 
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, Component)]
 #[repr(C)]
 pub struct InstanceData {
     pub position: Vec3,
@@ -93,6 +80,7 @@ pub struct InstanceData {
     pub color: [f32; 4],
 }
 
+#[allow(clippy::too_many_arguments)]
 fn queue_custom(
     transparent_3d_draw_functions: Res<DrawFunctions<Transparent3d>>,
     custom_pipeline: Res<CustomPipeline>,
