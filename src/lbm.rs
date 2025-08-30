@@ -135,6 +135,7 @@ impl<const X: usize, const Y: usize, const Z: usize, T: Clone + Copy> Field<X, Y
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Constants {
     pub time_relaxation_constant: Float,
     pub speed_of_sound: Float,
@@ -151,17 +152,17 @@ impl Default for Constants {
 
 pub struct Simulation<const X: usize, const Y: usize, const Z: usize> {
     pub distributions: Lattice<X, Y, Z>,
-    velocity: Field<X, Y, Z, Vec3>,
-    pub density: Field<X, Y, Z, Float>,
-    constants: Constants,
+    velocity: Box<Field<X, Y, Z, Vec3>>,
+    pub density: Box<Field<X, Y, Z, Float>>,
+    pub constants: Constants,
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
     pub fn new(constants: Constants) -> Self {
         Self {
             distributions: Lattice::default(),
-            velocity: Field::default(),
-            density: Field::new_from(1.0),
+            velocity: Box::new(Field::default()),
+            density: Box::new(Field::new_from(1.0)),
             constants,
         }
     }
@@ -197,10 +198,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
                         *new_dist.get_mut(loc) = lerp(
                             *distribution.get(loc),
                             equilibrium,
-                            // TODO: reconcile with wikipedia implementation
-                            // new_dist = 2 * equilibrium - velocity
                             self.constants.time_relaxation_constant,
-                            // 1.0 / self.constants.time_relaxation_constant,
                         );
                     }
                 }
