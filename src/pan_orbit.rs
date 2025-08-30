@@ -7,7 +7,6 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 // Bundle to spawn our custom camera easily
 #[derive(Bundle, Default)]
 pub struct PanOrbitCameraBundle {
-    pub camera: Camera3d,
     pub state: PanOrbitState,
     pub settings: PanOrbitSettings,
 }
@@ -82,19 +81,22 @@ impl Default for PanOrbitSettings {
 
 pub fn spawn_camera(mut commands: Commands) {
     let mut camera = PanOrbitCameraBundle::default();
+    camera.settings.zoom_key = Some(KeyCode::ShiftLeft);
+    camera.settings.orbit_key = Some(KeyCode::AltLeft);
+    camera.settings.orbit_sensitivity = 0.2f32.to_radians();
+    camera.settings.scroll_action = None;
     // Position our camera using our component,
     // not Transform (it would get overwritten)
     camera.state.center = Vec3::new(0.0, 0.0, 0.0);
-    // camera.state.center = Vec3::new(1.0, 2.0, 3.0);
-    camera.state.radius = 50.0;
-    camera.state.pitch = 15.0f32.to_radians();
+    camera.state.radius = 80.0;
+    camera.state.pitch = -30.0f32.to_radians();
     camera.state.yaw = 30.0f32.to_radians();
-    commands.spawn(camera);
+
+    commands.spawn((Camera3d::default(), camera));
 }
 
 pub fn pan_orbit_camera(
     kbd: Res<ButtonInput<KeyCode>>,
-    buttons: Res<ButtonInput<MouseButton>>,
     mut evr_motion: EventReader<MouseMotion>,
     mut evr_scroll: EventReader<MouseWheel>,
     mut q_camera: Query<(&PanOrbitSettings, &mut PanOrbitState, &mut Transform)>,
@@ -143,16 +145,13 @@ pub fn pan_orbit_camera(
         }
 
         let mut total_orbit = Vec2::ZERO;
-        if buttons.pressed(MouseButton::Left) {
+        if settings
+            .orbit_key
+            .map(|key| kbd.pressed(key))
+            .unwrap_or(false)
+        {
             total_orbit += total_motion.reflect(Vec2::X) * settings.orbit_sensitivity;
         }
-        // if settings
-        //     .orbit_key
-        //     .map(|key| kbd.pressed(key))
-        //     .unwrap_or(false)
-        // {
-        //     total_orbit -= total_motion * settings.orbit_sensitivity;
-        // }
         if settings.scroll_action == Some(PanOrbitAction::Orbit) {
             total_orbit -=
                 total_scroll_lines * settings.scroll_line_sensitivity * settings.orbit_sensitivity;
