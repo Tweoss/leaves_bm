@@ -6,18 +6,21 @@ mod render;
 use bevy::{prelude::*, render::view::NoFrustumCulling};
 use bevy_egui::PrimaryEguiContext;
 use bevy_render::view::RenderLayers;
-use leaves_bm::{Bound3, Constants, Float, Simulation};
+use leaves_bm::{
+    math::{Int3, Vec3},
+    Bound3, Constants, Float, Simulation,
+};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::{
-    egui::{ColorBounds, RestartSim, UiState},
+    egui::{ColorBounds, Function, InitParams, SimControls, UiState},
     keyboard::handle_keystrokes,
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: i32 = 30;
-const Y_COUNT: i32 = 30;
-const Z_COUNT: i32 = 30;
+const X_COUNT: usize = 30;
+const Y_COUNT: usize = 30;
+const Z_COUNT: usize = 20;
 
 /// set up a simple 3D scene
 fn setup(
@@ -54,13 +57,13 @@ fn setup(
                 .map(|(x, y, z)| {
                     let (x, y, z) = (x as f32, y as f32, z as f32);
                     InstanceData {
-                        position: Vec3::new(
+                        position: bevy::prelude::Vec3::new(
                             X_COUNT as f32 / 2.0 - x,
                             Y_COUNT as f32 / 2.0 - y,
                             Z_COUNT as f32 / 2.0 - z,
                         ),
                         scale: 1.0,
-                        color: LinearRgba::from(Color::hsla(x * 360., y, 0.5, 1.0)).to_f32_array(),
+                        color: LinearRgba::from(Color::WHITE).to_f32_array(),
                     }
                 })
                 .collect(),
@@ -87,85 +90,134 @@ fn setup(
             ..default()
         },
     ));
-
-    // light
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 1000.0,
-            // shadows_enabled: true,
-            ..default()
-        },
-        Transform::from_rotation(Quat::from_rotation_x(-90.0)),
-    ));
 }
 
 fn step_simulation(
     time: Res<Time>,
     mut timer: ResMut<SimulationTimer>,
     mut sim: ResMut<SimulationRes>,
-    mut restart_sim: ResMut<RestartSim>,
+    mut controls: ResMut<SimControls>,
+    params: Res<InitParams>,
     mut handles: Query<&mut InstanceMaterialData>,
     color_bounds: Res<ColorBounds>,
 ) {
-    if restart_sim.0 {
+    type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> f32>;
+    fn filler(dir: Int3) -> f32 {
+        if dir == Int3::ZERO {
+            1.0
+        } else {
+            0.0
+        }
+    }
+    let wave: Init = Box::new(|x, _, _, dir, _| {
+        let vec: Vec3 = dir.into();
+        if x != 0 && x + 1 != X_COUNT {
+            return filler(dir);
+        }
+        let x_f = x as f32 - (X_COUNT as f32 / 2.0);
+        let magnitude = vec.dot(Vec3::new(if x_f > 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0)) / 20.0;
+        if magnitude > 0.0 {
+            magnitude
+        } else {
+            filler(dir)
+        }
+    });
+    let circular: Init = Box::new(|x, y, z, dir, weight| {
+        let vec: Vec3 = dir.into();
+        let x_range = (X_COUNT / 4)..(X_COUNT * 3 / 4);
+        let y_range = (Y_COUNT / 4)..(Y_COUNT * 3 / 4);
+        if !x_range.contains(&x) {
+            return filler(dir);
+        }
+        if !y_range.contains(&y) {
+            return filler(dir);
+        }
+        if z != 0 {
+            return filler(dir);
+        }
+        let (x_f, y_f) = (
+            (x as i32 - (X_COUNT as i32 / 2)) as f32,
+            (y as i32 - (Y_COUNT as i32 / 2)) as f32,
+        );
+        let magnitude = vec.dot(Vec3::new(-y_f, x_f, 0.0)) * weight;
+        if magnitude > 0.0 {
+            magnitude
+        } else {
+            filler(dir)
+        }
+    });
+    let points: Init = Box::new(|x, y, z, dir, _| {
+        if x != X_COUNT / 2 || y != Y_COUNT / 2 || z != Z_COUNT / 2 {
+            return filler(dir);
+        }
+        if dir == Int3::ZERO {
+            20.0
+        } else {
+            0.0
+        }
+    });
+
+    let init_func = match params.function {
+        Function::Wave => wave,
+        Function::Circle => circular,
+        Function::Points => points,
+    };
+    let scale = params.scale;
+
+    let mut rerender = false;
+
+    if controls.restart_requested {
+        rerender = true;
+
         let constants = sim.0.constants;
         let mut new_sim = Simulation::new(constants);
-        for i in 0..(X_COUNT as usize) {
-            for j in 0..(Y_COUNT as usize) {
-                // *new_sim
-                //     .distributions
-                //     .q0
-                //     .get_mut(Bound3::new(i, j, (Z_COUNT as usize) / 2).unwrap()) = 10.0;
-
-                // *sim.distributions.q1[0].get_mut(Bound3::new(i, j, 2).unwrap()) = (i as Float).sqrt();
-                // *sim.distributions.q1[0].get_mut(Bound3::new(i, j, 2).unwrap()) = (i as Float).sqrt();
-                *new_sim.distributions.q1[(j / 5) % 6].get_mut(Bound3::new(i, j, 2).unwrap()) =
-                    (i as Float).abs().sqrt();
-            }
-        }
-        // *new_sim
-        //     .distributions
-        //     .q0
-        //     .get_mut(Bound3::new(0, 0, 0).unwrap()) = 10.0;
-        // *new_sim
-        //     .distributions
-        //     .q0
-        //     .get_mut(Bound3::new(4, 0, 0).unwrap()) = 10.0;
-        // *new_sim
-        //     .distributions
-        //     .q0
-        //     .get_mut(Bound3::new(3, 0, 0).unwrap()) = 10.0;
-        // *new_sim
-        //     .distributions
-        //     .q0
-        //     .get_mut(Bound3::new(2, 2, 0).unwrap()) = 10.0;
+        new_sim
+            .distributions
+            .iter_mut()
+            .for_each(|(dist, dir, weight)| {
+                for x in 0..X_COUNT {
+                    for y in 0..Y_COUNT {
+                        for z in 0..Z_COUNT {
+                            *dist.get_mut(Bound3::new(x, y, z).unwrap()) =
+                                init_func(x, y, z, dir, weight) * scale;
+                        }
+                    }
+                }
+            });
         new_sim.calc_conditions();
+
         *sim = SimulationRes(new_sim);
-        restart_sim.0 = false;
-
-        return;
+        controls.restart_requested = false;
     }
-    if timer.0.tick(time.delta()).just_finished() {
-        use std::time::Instant;
-        let start = Instant::now();
-        sim.0.step();
-        // dbg!(Instant::now().duration_since(start));
 
+    if !controls.paused && timer.0.tick(time.delta()).just_finished() {
+        // use std::time::Instant;
+        // let start = Instant::now();
+        sim.0.step();
+        if controls.single_step {
+            controls.paused = true;
+            controls.single_step = false;
+        }
+        rerender = true;
+        // dbg!(Instant::now().duration_since(start));
+    }
+
+    rerender |= color_bounds.is_changed();
+
+    if rerender {
         for mut material_data in handles.iter_mut() {
+            #[allow(clippy::modulo_one)]
             for (i, data) in material_data.0.iter_mut().enumerate() {
-                let i = i as i32;
-                let x = i % X_COUNT;
-                let y = (i / X_COUNT) % Y_COUNT;
-                let z = i / X_COUNT / Y_COUNT;
-                let value = (*sim
-                    .0
-                    .density
-                    .get(Bound3::new(x as usize, y as usize, z as usize).unwrap())
-                    - color_bounds.min)
+                let z = i % Z_COUNT;
+                let y = (i / Z_COUNT) % Y_COUNT;
+                let x = i / Z_COUNT / Y_COUNT;
+                let value = (*sim.0.density.get(Bound3::new(x, y, z).unwrap()) - color_bounds.min)
                     / (color_bounds.max - color_bounds.min);
-                // give a bit of nonlinearity to better see values close to 1.0
-                // .sqrt();
+                let value = value.min(1.0);
                 data.color = [value, value, value, 1.0];
+                if value == 1.0 {
+                    data.color = [1.0, 0.0, 0.0, 1.0]
+                }
             }
         }
     }
@@ -175,11 +227,12 @@ fn step_simulation(
 struct SimulationTimer(Timer);
 
 #[derive(Resource)]
-struct SimulationRes(Simulation<{ X_COUNT as usize }, { Y_COUNT as usize }, { Z_COUNT as usize }>);
+struct SimulationRes(Simulation<X_COUNT, Y_COUNT, Z_COUNT>);
 
 fn main() {
     let sim = Simulation::new(Constants {
-        time_relaxation_constant: 0.3,
+        // Should be greater than 1 for some reason.
+        time_relaxation_constant: 1.25,
         speed_of_sound: 1.0 / (3.0_f32).sqrt(),
     });
 
@@ -202,18 +255,21 @@ fn main() {
         .add_plugins(bevy_egui::EguiPlugin::default())
         .add_plugins(bevy_inspector_egui::DefaultInspectorConfigPlugin)
         .register_type::<ColorBounds>()
-        .register_type::<RestartSim>()
         .insert_resource(sim_res)
-        .insert_resource(ColorBounds {
-            min: 1.0,
-            max: 10.0,
+        .insert_resource(ColorBounds { min: 1.0, max: 1.5 })
+        .insert_resource(SimControls {
+            restart_requested: true,
+            single_step: false,
+            paused: false,
         })
-        .insert_resource(RestartSim(true))
+        .insert_resource(InitParams {
+            function: Function::Circle,
+            scale: 1.0,
+        })
         .insert_resource(SimulationTimer(Timer::new(
             Duration::from_millis(100),
             TimerMode::Repeating,
         )))
-        // Debugger resources
         .insert_resource(UiState::new())
         .add_systems(Startup, (setup, spawn_camera))
         .add_systems(bevy_egui::EguiPrimaryContextPass, egui::show_ui_system)

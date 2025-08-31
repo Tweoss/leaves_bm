@@ -18,9 +18,25 @@ use bevy_render::camera::Viewport;
 use bevy_window::PrimaryWindow;
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 
-#[derive(Resource, Reflect, Default)]
-#[reflect(Resource)]
-pub struct RestartSim(pub bool);
+#[derive(Resource)]
+pub struct SimControls {
+    pub restart_requested: bool,
+    pub single_step: bool,
+    pub paused: bool,
+}
+
+#[derive(Resource, PartialEq)]
+pub struct InitParams {
+    pub function: Function,
+    pub scale: f32,
+}
+
+#[derive(PartialEq)]
+pub enum Function {
+    Wave,
+    Circle,
+    Points,
+}
 
 #[derive(Resource, Reflect, Default)]
 #[reflect(Resource)]
@@ -34,7 +50,6 @@ pub fn show_ui_system(world: &mut World) {
         .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world)
     else {
-        dbg!("missing context");
         return;
     };
     let mut egui_context = egui_context.clone();
@@ -161,11 +176,42 @@ impl egui_dock::TabViewer for TabViewer<'_> {
             EguiWindow::Resources => select_resource(ui, &type_registry, self.selection),
             EguiWindow::Assets => select_asset(ui, &type_registry, self.world, self.selection),
             EguiWindow::Inspector => {
-                if let Some(mut restart) = self.world.get_resource_mut::<RestartSim>() {
+                if let Some(controls) = self.world.get_resource_mut::<SimControls>() {
+                    let mut controls = controls;
                     if ui.button("Restart Sim").clicked() {
-                        restart.0 = true;
-                        restart.set_changed();
+                        controls.restart_requested = true;
+                        controls.set_changed();
                     }
+                    ui.checkbox(&mut controls.paused, "Paused");
+                }
+                if let Some(mut params) = self.world.get_resource_mut::<InitParams>() {
+                    let function = &mut params.function;
+                    ui.label("Init Function");
+                    ui.radio_value(function, Function::Wave, "Wave");
+                    ui.radio_value(function, Function::Circle, "Circle");
+                    ui.radio_value(function, Function::Points, "Points");
+
+                    ui.add(
+                        egui::Slider::new(&mut params.scale, 0.01..=2.0)
+                            .text("Scale")
+                            .logarithmic(true),
+                    );
+                }
+                if let Some(mut bounds) = self.world.get_resource_mut::<ColorBounds>() {
+                    let min = bounds.min;
+                    ui.add(
+                        egui::Slider::new(&mut bounds.min, 1.0..=10.0)
+                            .text("Min")
+                            .logarithmic(true),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut bounds.max, min..=10.0)
+                            .text("Max")
+                            .logarithmic(true),
+                    );
+                    // ui.label("Init Function");
+                    // ui.radio_value(&mut *initialization, Initialization::Wave, "Wave");
+                    // ui.radio_value(&mut *initialization, Initialization::Circle, "Circle");
                 }
                 match *self.selection {
                     InspectorSelection::Entities => match self.selected_entities.as_slice() {

@@ -19,7 +19,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Default for Lattice<X, Y, Z
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> Lattice<X, Y, Z> {
-    fn iter_mut(
+    pub fn iter_mut(
         &mut self,
     ) -> impl Iterator<Item = (&mut PacketDistribution<X, Y, Z>, Int3, Float)> {
         std::iter::once(self.q0.as_mut())
@@ -29,7 +29,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Lattice<X, Y, Z> {
             .map(|(i, dist)| (dist, Self::direction(i), Self::weights(i)))
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&PacketDistribution<X, Y, Z>, Int3, Float)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&PacketDistribution<X, Y, Z>, Int3, Float)> {
         std::iter::once(self.q0.as_ref())
             .chain(self.q1.iter())
             .chain(self.q2.iter())
@@ -98,11 +98,11 @@ impl<const X: usize, const Y: usize, const Z: usize> Default for PacketDistribut
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> PacketDistribution<X, Y, Z> {
-    pub fn get(&self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &Float {
-        &self.values[x][y][z]
+    pub fn get(&self, bounds: Bound3<X, Y, Z>) -> &Float {
+        &self.values[bounds.x()][bounds.y()][bounds.z()]
     }
-    pub fn get_mut(&mut self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &mut Float {
-        &mut self.values[x][y][z]
+    pub fn get_mut(&mut self, bounds: Bound3<X, Y, Z>) -> &mut Float {
+        &mut self.values[bounds.x()][bounds.y()][bounds.z()]
     }
 }
 
@@ -127,11 +127,11 @@ impl<const X: usize, const Y: usize, const Z: usize, T: Clone + Copy> Field<X, Y
         }
     }
 
-    pub fn get(&self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &T {
-        &self.values[x][y][z]
+    pub fn get(&self, bounds: Bound3<X, Y, Z>) -> &T {
+        &self.values[bounds.x()][bounds.y()][bounds.z()]
     }
-    pub fn get_mut(&mut self, Bound3 { x, y, z }: Bound3<X, Y, Z>) -> &mut T {
-        &mut self.values[x][y][z]
+    pub fn get_mut(&mut self, bounds: Bound3<X, Y, Z>) -> &mut T {
+        &mut self.values[bounds.x()][bounds.y()][bounds.z()]
     }
 }
 
@@ -195,11 +195,15 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
                             * (1.0 + dm / c2 + dm * dm / (2.0 * c2 * c2)
                                 - flow_velocity.dot(*flow_velocity) / (2.0 * c2));
 
+                        // Wikipedia uses
+                        // lerp(current, equilibrium, (TRC-1)/TRC)
+                        // where TRC=time_relaxation_constant
                         *new_dist.get_mut(loc) = lerp(
                             *distribution.get(loc),
                             equilibrium,
                             self.constants.time_relaxation_constant,
                         );
+                        // df.field[y][x][v]=Velocity * ((TimeRelaxationConstant-1)/TimeRelaxationConstant)+(equilibrium)/TimeRelaxationConstant
                     }
                 }
             }

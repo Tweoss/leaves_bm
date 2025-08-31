@@ -36,7 +36,7 @@ pub fn lerp(a: Float, b: Float, mix: Float) -> Float {
 }
 
 impl Vec3 {
-    fn new(x: Float, y: Float, z: Float) -> Self {
+    pub fn new(x: Float, y: Float, z: Float) -> Self {
         Self { x, y, z }
     }
     pub fn dot(self, other: Self) -> Float {
@@ -62,14 +62,15 @@ impl Add<Vec3> for Vec3 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Int3 {
-    x: i32,
-    y: i32,
-    z: i32,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
 }
 
 impl Int3 {
+    pub const ZERO: Self = Int3 { x: 0, y: 0, z: 0 };
     pub fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
@@ -100,15 +101,25 @@ impl From<Int3> for Vec3 {
 
 #[derive(Clone, Copy)]
 pub struct Bound3<const X: usize, const Y: usize, const Z: usize> {
-    pub x: usize,
-    pub y: usize,
-    pub z: usize,
+    x: usize,
+    y: usize,
+    z: usize,
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> Bound3<X, Y, Z> {
     #[allow(clippy::result_unit_err)]
     pub fn new(x: usize, y: usize, z: usize) -> Result<Self, ()> {
         (x, y, z).try_into()
+    }
+
+    pub fn x(&self) -> usize {
+        self.x
+    }
+    pub fn y(&self) -> usize {
+        self.y
+    }
+    pub fn z(&self) -> usize {
+        self.z
     }
 }
 
