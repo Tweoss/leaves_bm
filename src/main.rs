@@ -18,9 +18,9 @@ use crate::{
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 30;
-const Y_COUNT: usize = 30;
-const Z_COUNT: usize = 20;
+const X_COUNT: usize = 50;
+const Y_COUNT: usize = 50;
+const Z_COUNT: usize = 50;
 
 /// set up a simple 3D scene
 fn setup(
@@ -191,15 +191,15 @@ fn step_simulation(
     }
 
     if !controls.paused && timer.0.tick(time.delta()).just_finished() {
-        // use std::time::Instant;
-        // let start = Instant::now();
+        use std::time::Instant;
+        let start = Instant::now();
         sim.0.step();
         if controls.single_step {
             controls.paused = true;
             controls.single_step = false;
         }
         rerender = true;
-        // dbg!(Instant::now().duration_since(start));
+        dbg!(Instant::now().duration_since(start));
     }
 
     rerender |= color_bounds.is_changed();

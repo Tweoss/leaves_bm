@@ -10,7 +10,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Default for Lattice<X, Y, Z
     fn default() -> Self {
         Self {
             q0: Box::new(PacketDistribution {
-                values: [[[1.0; Z]; Y]; X],
+                values: std::array::from_fn(|_| Box::new([[1.0; Z]; Y])),
             }),
             q1: Default::default(),
             q2: Default::default(),
@@ -86,13 +86,13 @@ impl<const X: usize, const Y: usize, const Z: usize> Lattice<X, Y, Z> {
 
 /// The packet distributions at each point in the lattice in a specific direction.
 pub struct PacketDistribution<const X: usize, const Y: usize, const Z: usize> {
-    values: [[[Float; Z]; Y]; X],
+    values: [Box<[[Float; Z]; Y]>; X],
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> Default for PacketDistribution<X, Y, Z> {
     fn default() -> Self {
         Self {
-            values: [[[0.0; Z]; Y]; X],
+            values: std::array::from_fn(|_| Box::new([[0.0; Z]; Y])),
         }
     }
 }
