@@ -6,21 +6,19 @@ mod render;
 use bevy::{prelude::*, render::view::NoFrustumCulling};
 use bevy_egui::PrimaryEguiContext;
 use bevy_render::view::RenderLayers;
-use leaves_bm::{
-    math::{Int3, Vec3},
-    Bound3, Constants, Float, Simulation,
-};
+use leaves_bm::{math::Int3, Bound3, Constants, Float, Simulation};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 use crate::{
     egui::{ColorBounds, Function, InitParams, SimControls, UiState},
     keyboard::handle_keystrokes,
+    pan_orbit::spawn_camera,
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 40;
-const Y_COUNT: usize = 40;
-const Z_COUNT: usize = 40;
+const X_COUNT: usize = 30;
+const Y_COUNT: usize = 30;
+const Z_COUNT: usize = 30;
 
 /// set up a simple 3D scene
 fn setup(
@@ -68,18 +66,11 @@ fn setup(
                 })
                 .collect(),
         ),
-        // NOTE: Frustum culling is done based on the Aabb of the Mesh and the GlobalTransform.
-        // As the cube is at the origin, if its Aabb moves outside the view frustum, all the
-        // instanced cubes will be culled.
-        // The InstanceMaterialData contains the 'GlobalTransform' information for this custom
-        // instancing, and that is not taken into account with the built-in frustum culling.
-        // We must disable the built-in frustum culling by adding the `NoFrustumCulling` marker
-        // component to avoid incorrect culling.
         NoFrustumCulling,
     );
     commands.spawn(bundle);
 
-    // egui camera
+    // egui camera (the whole window)
     commands.spawn((
         Camera2d,
         Name::new("Egui Camera"),
@@ -90,19 +81,17 @@ fn setup(
             ..default()
         },
     ));
+
+    // pan orbit camera (in a panel)
+    spawn_camera(commands);
 }
 
-fn step_simulation(
-    time: Res<Time>,
-    mut timer: ResMut<SimulationTimer>,
-    mut sim: ResMut<SimulationRes>,
-    mut controls: ResMut<SimControls>,
-    params: Res<InitParams>,
-    mut handles: Query<&mut InstanceMaterialData>,
-    color_bounds: Res<ColorBounds>,
-) {
-    type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> Option<f32>>;
-    let wave: Init = Box::new(|x, _, _, dir, _| {
+mod init {
+    use leaves_bm::math::{Int3, Vec3};
+
+    use crate::{X_COUNT, Y_COUNT, Z_COUNT};
+
+    pub fn wave(x: usize, _: usize, _: usize, dir: Int3, _: f32) -> Option<f32> {
         let vec: Vec3 = dir.into();
         if x != 0 && x + 1 != X_COUNT {
             return None;
@@ -110,8 +99,8 @@ fn step_simulation(
         let x_f = x as f32 - (X_COUNT as f32 / 2.0);
         let magnitude = vec.dot(Vec3::new(if x_f > 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0)) / 20.0;
         (magnitude > 0.0).then_some(magnitude)
-    });
-    let circular: Init = Box::new(|x, y, z, dir, weight| {
+    }
+    pub fn circular(x: usize, y: usize, z: usize, dir: Int3, weight: f32) -> Option<f32> {
         let vec: Vec3 = dir.into();
         let x_range = (X_COUNT / 4)..(X_COUNT * 3 / 4);
         let y_range = (Y_COUNT / 4)..(Y_COUNT * 3 / 4);
@@ -130,8 +119,8 @@ fn step_simulation(
         );
         let magnitude = vec.dot(Vec3::new(-y_f, x_f, 0.0)) * weight;
         (magnitude > 0.0).then_some(magnitude)
-    });
-    let point: Init = Box::new(|x, y, z, dir, _| {
+    }
+    pub fn point(x: usize, y: usize, z: usize, dir: Int3, _: f32) -> Option<f32> {
         if x != X_COUNT / 2 || y != Y_COUNT / 2 || z != Z_COUNT / 2 {
             return None;
         }
@@ -140,30 +129,32 @@ fn step_simulation(
         } else {
             None
         }
-    });
+    }
+}
 
-    let init_func = match params.function {
-        Function::Wave => wave,
-        Function::Circle => circular,
-        Function::Point => point,
+fn step_simulation(
+    time: Res<Time>,
+    mut timer: ResMut<SimulationTimer>,
+    mut sim: ResMut<SimulationRes>,
+    mut controls: ResMut<SimControls>,
+    params: Res<InitParams>,
+    mut handles: Query<&mut InstanceMaterialData>,
+    color_bounds: Res<ColorBounds>,
+) {
+    type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> Option<f32>>;
+
+    let init_func: Init = match params.function {
+        Function::Wave => Box::new(init::wave),
+        Function::Circle => Box::new(init::circular),
+        Function::Point => Box::new(init::point),
     };
-    let scale = params.scale;
-
     let mut rerender = false;
 
     if controls.restart_requested {
         rerender = true;
+        controls.restart_requested = false;
 
-        fn filler(dir: Int3) -> f32 {
-            if dir == Int3::ZERO {
-                1.0
-            } else {
-                0.0
-            }
-        }
-
-        let constants = sim.0.constants;
-        let mut new_sim = Simulation::new(constants);
+        let mut new_sim = Simulation::new(sim.0.constants);
         new_sim
             .distributions
             .iter_mut()
@@ -173,8 +164,8 @@ fn step_simulation(
                         for z in 0..Z_COUNT {
                             *dist.get_mut(Bound3::new(x, y, z).unwrap()) =
                                 init_func(x, y, z, dir, weight)
-                                    .map(|v| v * scale)
-                                    .unwrap_or_else(|| filler(dir));
+                                    .map(|v| v * params.scale)
+                                    .unwrap_or(if dir == Int3::ZERO { 1.0 } else { 0.0 });
                         }
                     }
                 }
@@ -182,19 +173,19 @@ fn step_simulation(
         new_sim.calc_conditions();
 
         *sim = SimulationRes(new_sim);
-        controls.restart_requested = false;
     }
 
     if !controls.paused && timer.0.tick(time.delta()).just_finished() {
+        rerender = true;
+
         use std::time::Instant;
         let start = Instant::now();
         sim.0.step();
+        dbg!(Instant::now().duration_since(start));
         if controls.single_step {
             controls.paused = true;
             controls.single_step = false;
         }
-        rerender = true;
-        dbg!(Instant::now().duration_since(start));
     }
 
     rerender |= color_bounds.is_changed();
@@ -233,7 +224,7 @@ fn main() {
 
     let sim_res = SimulationRes(sim);
 
-    use pan_orbit::{pan_orbit_camera, spawn_camera, PanOrbitState};
+    use pan_orbit::{pan_orbit_camera, PanOrbitState};
     use std::time::Duration;
     App::new()
         .add_plugins((
@@ -266,7 +257,7 @@ fn main() {
             TimerMode::Repeating,
         )))
         .insert_resource(UiState::new())
-        .add_systems(Startup, (setup, spawn_camera))
+        .add_systems(Startup, setup)
         .add_systems(bevy_egui::EguiPrimaryContextPass, egui::show_ui_system)
         .add_systems(
             PostUpdate,

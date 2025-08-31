@@ -103,7 +103,6 @@ pub struct UiState {
     viewport_rect: egui::Rect,
     selected_entities: SelectedEntities,
     selection: InspectorSelection,
-    // gizmo: Gizmo,
 }
 
 impl UiState {
@@ -121,7 +120,6 @@ impl UiState {
             selected_entities: SelectedEntities::default(),
             selection: InspectorSelection::Entities,
             viewport_rect: egui::Rect::NOTHING,
-            // gizmo: Gizmo::default(),
         }
     }
 
@@ -131,7 +129,6 @@ impl UiState {
             viewport_rect: &mut self.viewport_rect,
             selected_entities: &mut self.selected_entities,
             selection: &mut self.selection,
-            // gizmo: &mut self.gizmo,
         };
         DockArea::new(&mut self.state)
             .style(Style::from_egui(ctx.style().as_ref()))
@@ -153,7 +150,6 @@ struct TabViewer<'a> {
     selected_entities: &'a mut SelectedEntities,
     selection: &'a mut InspectorSelection,
     viewport_rect: &'a mut egui::Rect,
-    // gizmo: &'a mut Gizmo,
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
@@ -213,9 +209,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                             .text("Max")
                             .logarithmic(true),
                     );
-                    // ui.label("Init Function");
-                    // ui.radio_value(&mut *initialization, Initialization::Wave, "Wave");
-                    // ui.radio_value(&mut *initialization, Initialization::Circle, "Circle");
                 }
                 match *self.selection {
                     InspectorSelection::Entities => match self.selected_entities.as_slice() {
