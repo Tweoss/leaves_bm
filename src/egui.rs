@@ -35,7 +35,7 @@ pub struct InitParams {
 pub enum Function {
     Wave,
     Circle,
-    Points,
+    Point,
 }
 
 #[derive(Resource, Reflect, Default)]
@@ -183,13 +183,17 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                         controls.set_changed();
                     }
                     ui.checkbox(&mut controls.paused, "Paused");
+                    if ui.button("Single Step").clicked() {
+                        controls.single_step = true;
+                        controls.paused = false;
+                    }
                 }
                 if let Some(mut params) = self.world.get_resource_mut::<InitParams>() {
                     let function = &mut params.function;
                     ui.label("Init Function");
                     ui.radio_value(function, Function::Wave, "Wave");
                     ui.radio_value(function, Function::Circle, "Circle");
-                    ui.radio_value(function, Function::Points, "Points");
+                    ui.radio_value(function, Function::Point, "Point");
 
                     ui.add(
                         egui::Slider::new(&mut params.scale, 0.01..=2.0)

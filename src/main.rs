@@ -18,9 +18,9 @@ use crate::{
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 50;
-const Y_COUNT: usize = 50;
-const Z_COUNT: usize = 50;
+const X_COUNT: usize = 40;
+const Y_COUNT: usize = 40;
+const Z_COUNT: usize = 40;
 
 /// set up a simple 3D scene
 fn setup(
@@ -101,66 +101,51 @@ fn step_simulation(
     mut handles: Query<&mut InstanceMaterialData>,
     color_bounds: Res<ColorBounds>,
 ) {
-    type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> f32>;
-    fn filler(dir: Int3) -> f32 {
-        if dir == Int3::ZERO {
-            1.0
-        } else {
-            0.0
-        }
-    }
+    type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> Option<f32>>;
     let wave: Init = Box::new(|x, _, _, dir, _| {
         let vec: Vec3 = dir.into();
         if x != 0 && x + 1 != X_COUNT {
-            return filler(dir);
+            return None;
         }
         let x_f = x as f32 - (X_COUNT as f32 / 2.0);
         let magnitude = vec.dot(Vec3::new(if x_f > 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0)) / 20.0;
-        if magnitude > 0.0 {
-            magnitude
-        } else {
-            filler(dir)
-        }
+        (magnitude > 0.0).then_some(magnitude)
     });
     let circular: Init = Box::new(|x, y, z, dir, weight| {
         let vec: Vec3 = dir.into();
         let x_range = (X_COUNT / 4)..(X_COUNT * 3 / 4);
         let y_range = (Y_COUNT / 4)..(Y_COUNT * 3 / 4);
         if !x_range.contains(&x) {
-            return filler(dir);
+            return None;
         }
         if !y_range.contains(&y) {
-            return filler(dir);
+            return None;
         }
         if z != 0 {
-            return filler(dir);
+            return None;
         }
         let (x_f, y_f) = (
             (x as i32 - (X_COUNT as i32 / 2)) as f32,
             (y as i32 - (Y_COUNT as i32 / 2)) as f32,
         );
         let magnitude = vec.dot(Vec3::new(-y_f, x_f, 0.0)) * weight;
-        if magnitude > 0.0 {
-            magnitude
-        } else {
-            filler(dir)
-        }
+        (magnitude > 0.0).then_some(magnitude)
     });
-    let points: Init = Box::new(|x, y, z, dir, _| {
+    let point: Init = Box::new(|x, y, z, dir, _| {
         if x != X_COUNT / 2 || y != Y_COUNT / 2 || z != Z_COUNT / 2 {
-            return filler(dir);
+            return None;
         }
         if dir == Int3::ZERO {
-            20.0
+            Some(70.0)
         } else {
-            0.0
+            None
         }
     });
 
     let init_func = match params.function {
         Function::Wave => wave,
         Function::Circle => circular,
-        Function::Points => points,
+        Function::Point => point,
     };
     let scale = params.scale;
 
@@ -168,6 +153,14 @@ fn step_simulation(
 
     if controls.restart_requested {
         rerender = true;
+
+        fn filler(dir: Int3) -> f32 {
+            if dir == Int3::ZERO {
+                1.0
+            } else {
+                0.0
+            }
+        }
 
         let constants = sim.0.constants;
         let mut new_sim = Simulation::new(constants);
@@ -179,7 +172,9 @@ fn step_simulation(
                     for y in 0..Y_COUNT {
                         for z in 0..Z_COUNT {
                             *dist.get_mut(Bound3::new(x, y, z).unwrap()) =
-                                init_func(x, y, z, dir, weight) * scale;
+                                init_func(x, y, z, dir, weight)
+                                    .map(|v| v * scale)
+                                    .unwrap_or_else(|| filler(dir));
                         }
                     }
                 }
@@ -244,7 +239,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: "BLM Simulator".to_string(),
+                    title: "LBM Simulator".to_string(),
                     ..Default::default()
                 }),
                 ..Default::default()
