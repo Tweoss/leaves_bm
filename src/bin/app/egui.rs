@@ -25,7 +25,7 @@ pub struct SimControls {
     pub paused: bool,
 }
 
-#[derive(Resource, PartialEq)]
+#[derive(Resource)]
 pub struct InitParams {
     pub function: Function,
     pub scale: f32,
@@ -38,11 +38,53 @@ pub enum Function {
     Point,
 }
 
-#[derive(Resource, Reflect, Default)]
-#[reflect(Resource)]
+#[derive(Resource)]
 pub struct ColorBounds {
     pub min: f32,
     pub max: f32,
+}
+
+#[derive(Resource, Clone)]
+pub struct Constants {
+    pub time_relaxation_constant: f32,
+    pub speed_of_sound: f32,
+    pub particle_mass: f32,
+    pub particle_velocity_decay: f32,
+}
+
+impl From<leaves_bm::lbm::Constants> for Constants {
+    fn from(
+        leaves_bm::lbm::Constants {
+            time_relaxation_constant,
+            speed_of_sound,
+            particle_mass,
+            particle_velocity_decay,
+        }: leaves_bm::lbm::Constants,
+    ) -> Self {
+        Self {
+            time_relaxation_constant,
+            speed_of_sound,
+            particle_mass,
+            particle_velocity_decay,
+        }
+    }
+}
+impl From<Constants> for leaves_bm::lbm::Constants {
+    fn from(
+        Constants {
+            time_relaxation_constant,
+            speed_of_sound,
+            particle_mass,
+            particle_velocity_decay,
+        }: Constants,
+    ) -> Self {
+        Self {
+            time_relaxation_constant,
+            speed_of_sound,
+            particle_mass,
+            particle_velocity_decay,
+        }
+    }
 }
 
 pub fn show_ui_system(world: &mut World) {
@@ -194,6 +236,28 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                     ui.add(
                         egui::Slider::new(&mut params.scale, 0.01..=2.0)
                             .text("Scale")
+                            .logarithmic(true),
+                    );
+                }
+
+                ui.separator();
+                if let Some(mut constants) = self.world.get_resource_mut::<Constants>() {
+                    ui.add(
+                        egui::Slider::new(&mut constants.time_relaxation_constant, 1.0..=3.0)
+                            .text("Time Relaxation"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut constants.speed_of_sound, 0.1..=1.0)
+                            .text("Speed of Sound"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut constants.particle_mass, 0.01..=2.0)
+                            .text("Mass")
+                            .logarithmic(true),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut constants.particle_velocity_decay, 0.01..=1.0)
+                            .text("Velocity Decay")
                             .logarithmic(true),
                     );
                 }

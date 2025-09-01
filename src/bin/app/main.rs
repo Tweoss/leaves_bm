@@ -6,8 +6,8 @@ mod render;
 use bevy::{prelude::*, render::view::NoFrustumCulling};
 use bevy_egui::PrimaryEguiContext;
 use bevy_render::view::RenderLayers;
-use leaves_bm::{math::Int3, Bound3, Constants, Float, Simulation};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use leaves_bm::{lbm::Constants, lbm::Simulation, math::Int3, Bound3, Float};
+use rand::{rngs::SmallRng, SeedableRng};
 
 use crate::{
     egui::{ColorBounds, Function, InitParams, SimControls, UiState},
@@ -16,11 +16,13 @@ use crate::{
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 30;
-const Y_COUNT: usize = 30;
-const Z_COUNT: usize = 30;
+const X_COUNT: usize = 40;
+const Y_COUNT: usize = 40;
+const Z_COUNT: usize = 3;
+const PARTICLE_COUNT: usize = 50;
+const RNG_SEED: u64 = 0xDEADBEEF;
 
-/// set up a simple 3D scene
+/// initialize 3d scene objects
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -32,22 +34,27 @@ fn setup(
         MeshMaterial3d(materials.add(Color::WHITE)),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
     ));
+
     // particles
-    let particle_count = 10;
-    let mut rng = SmallRng::seed_from_u64(0xDEADBEEF);
-    let particles = (0..particle_count)
-        .map(|_| {
-            let (x, y, z) = (
-                rng.random_range(0..X_COUNT),
-                rng.random_range(0..Y_COUNT),
-                rng.random_range(0..Z_COUNT),
-            );
-        })
-        .collect::<Vec<_>>();
+    let bundle = (
+        Mesh3d(meshes.add(Sphere::new(0.3))),
+        render::ParticlePoint,
+        InstanceMaterialData(
+            (0..PARTICLE_COUNT)
+                .map(|_| InstanceData {
+                    position: Vec3::ZERO,
+                    scale: 1.0,
+                    color: LinearRgba::new(0.6, 0.2, 0.2, 1.0).to_f32_array(),
+                })
+                .collect(),
+        ),
+    );
+    commands.spawn(bundle);
 
     // instanced boxes
     let bundle = (
-        Mesh3d(meshes.add(Cuboid::new(0.4, 0.4, 0.4))),
+        Mesh3d(meshes.add(Cuboid::new(0.3, 0.3, 0.3))),
+        render::GridPoint,
         InstanceMaterialData(
             (0..X_COUNT)
                 .flat_map(|x| (0..Y_COUNT).map(move |y| (x, y)))
@@ -87,9 +94,13 @@ fn setup(
 }
 
 mod init {
-    use leaves_bm::math::{Int3, Vec3};
+    use leaves_bm::{
+        lbm::Particle,
+        math::{Int3, Vec3},
+    };
+    use rand::Rng;
 
-    use crate::{X_COUNT, Y_COUNT, Z_COUNT};
+    use crate::{PARTICLE_COUNT, X_COUNT, Y_COUNT, Z_COUNT};
 
     pub fn wave(x: usize, _: usize, _: usize, dir: Int3, _: f32) -> Option<f32> {
         let vec: Vec3 = dir.into();
@@ -130,16 +141,28 @@ mod init {
             None
         }
     }
+
+    pub fn particles<T: Rng>(rng: &mut T) -> Vec<Particle<X_COUNT, Y_COUNT, Z_COUNT>> {
+        (0..PARTICLE_COUNT)
+            .map(|_| Particle::from_rng_bounds(rng))
+            .collect()
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn step_simulation(
     time: Res<Time>,
     mut timer: ResMut<SimulationTimer>,
     mut sim: ResMut<SimulationRes>,
     mut controls: ResMut<SimControls>,
     params: Res<InitParams>,
-    mut handles: Query<&mut InstanceMaterialData>,
+    grid: Single<(&mut InstanceMaterialData, &render::GridPoint)>,
+    particles: Single<
+        (&mut InstanceMaterialData, &render::ParticlePoint),
+        Without<render::GridPoint>,
+    >,
     color_bounds: Res<ColorBounds>,
+    constants: Res<egui::Constants>,
 ) {
     type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> Option<f32>>;
 
@@ -150,11 +173,14 @@ fn step_simulation(
     };
     let mut rerender = false;
 
+    sim.0.constants = constants.into_inner().clone().into();
+
     if controls.restart_requested {
         rerender = true;
         controls.restart_requested = false;
 
-        let mut new_sim = Simulation::new(sim.0.constants);
+        let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+        let mut new_sim = Simulation::new(sim.0.constants, init::particles(&mut rng));
         new_sim
             .distributions
             .iter_mut()
@@ -191,21 +217,29 @@ fn step_simulation(
     rerender |= color_bounds.is_changed();
 
     if rerender {
-        for mut material_data in handles.iter_mut() {
-            #[allow(clippy::modulo_one)]
-            for (i, data) in material_data.0.iter_mut().enumerate() {
-                let z = i % Z_COUNT;
-                let y = (i / Z_COUNT) % Y_COUNT;
-                let x = i / Z_COUNT / Y_COUNT;
-                let value = (*sim.0.density.get(Bound3::new(x, y, z).unwrap()) - color_bounds.min)
-                    / (color_bounds.max - color_bounds.min);
-                let value = value.min(1.0);
-                data.color = [value, value, value, 1.0];
-                if value == 1.0 {
-                    data.color = [1.0, 0.0, 0.0, 1.0]
-                }
+        let (mut grid, _) = grid.into_inner();
+        #[allow(clippy::modulo_one)]
+        for (i, data) in &mut grid.0.iter_mut().enumerate() {
+            let z = i % Z_COUNT;
+            let y = (i / Z_COUNT) % Y_COUNT;
+            let x = i / Z_COUNT / Y_COUNT;
+            let value = (*sim.0.density.get(Bound3::new(x, y, z).unwrap()) - color_bounds.min)
+                / (color_bounds.max - color_bounds.min);
+            let value = value.min(1.0);
+            data.color = [value, value, value, 1.0];
+            if value == 1.0 {
+                data.color = [1.0, 0.0, 0.0, 1.0]
             }
         }
+        let (mut particles, _) = particles.into_inner();
+        let iter_mut = particles.0.iter_mut();
+        iter_mut
+            .zip(sim.0.particles.iter())
+            .for_each(|(data, particle)| {
+                data.position.x = X_COUNT as f32 / 2.0 - particle.position.x;
+                data.position.y = Y_COUNT as f32 / 2.0 - particle.position.y;
+                data.position.z = Z_COUNT as f32 / 2.0 - particle.position.z;
+            });
     }
 }
 
@@ -216,13 +250,17 @@ struct SimulationTimer(Timer);
 struct SimulationRes(Simulation<X_COUNT, Y_COUNT, Z_COUNT>);
 
 fn main() {
-    let sim = Simulation::new(Constants {
-        // Should be greater than 1 for some reason.
-        time_relaxation_constant: 1.25,
-        speed_of_sound: 1.0 / (3.0_f32).sqrt(),
-    });
-
-    let sim_res = SimulationRes(sim);
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+    let sim = Simulation::new(
+        Constants {
+            // Should be greater than 1 for some reason.
+            time_relaxation_constant: 1.25,
+            speed_of_sound: 1.0 / (3.0_f32).sqrt(),
+            particle_mass: 0.15,
+            particle_velocity_decay: 0.2,
+        },
+        init::particles(&mut rng),
+    );
 
     use pan_orbit::{pan_orbit_camera, PanOrbitState};
     use std::time::Duration;
@@ -240,8 +278,6 @@ fn main() {
         // Debugger items.
         .add_plugins(bevy_egui::EguiPlugin::default())
         .add_plugins(bevy_inspector_egui::DefaultInspectorConfigPlugin)
-        .register_type::<ColorBounds>()
-        .insert_resource(sim_res)
         .insert_resource(ColorBounds { min: 1.0, max: 1.5 })
         .insert_resource(SimControls {
             restart_requested: true,
@@ -252,11 +288,13 @@ fn main() {
             function: Function::Circle,
             scale: 1.0,
         })
+        .insert_resource(egui::Constants::from(sim.constants))
         .insert_resource(SimulationTimer(Timer::new(
-            Duration::from_millis(100),
+            Duration::from_millis(10),
             TimerMode::Repeating,
         )))
         .insert_resource(UiState::new())
+        .insert_resource(SimulationRes(sim))
         .add_systems(Startup, setup)
         .add_systems(bevy_egui::EguiPrimaryContextPass, egui::show_ui_system)
         .add_systems(

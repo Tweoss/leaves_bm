@@ -5,11 +5,26 @@ use std::{
 
 pub type Float = f32;
 
+pub fn lerp(a: Float, b: Float, mix: Float) -> Float {
+    b * mix + a * (1.0 - mix)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Vec3 {
-    x: Float,
-    y: Float,
-    z: Float,
+    pub x: Float,
+    pub y: Float,
+    pub z: Float,
+}
+
+impl Vec3 {
+    pub fn wrap(self, (x, y, z): (usize, usize, usize)) -> Self {
+        (
+            self.x.rem_euclid(x as Float),
+            self.y.rem_euclid(y as Float),
+            self.z.rem_euclid(z as Float),
+        )
+            .into()
+    }
 }
 
 impl Display for Vec3 {
@@ -31,12 +46,15 @@ impl Default for Vec3 {
     }
 }
 
-pub fn lerp(a: Float, b: Float, mix: Float) -> Float {
-    b * mix + a * (1.0 - mix)
+impl From<(f32, f32, f32)> for Vec3 {
+    fn from((x, y, z): (f32, f32, f32)) -> Self {
+        Self { x, y, z }
+    }
 }
 
 impl Vec3 {
-    pub fn new(x: Float, y: Float, z: Float) -> Self {
+    pub const ZERO: Self = Vec3::new(0.0, 0.0, 0.0);
+    pub const fn new(x: Float, y: Float, z: Float) -> Self {
         Self { x, y, z }
     }
     pub fn dot(self, other: Self) -> Float {
@@ -62,6 +80,12 @@ impl Add<Vec3> for Vec3 {
     }
 }
 
+impl std::iter::Sum for Vec3 {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.reduce(|a, b| a + b).unwrap_or(Vec3::ZERO)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Int3 {
     pub x: i32,
@@ -74,12 +98,13 @@ impl Int3 {
     pub fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
-    pub fn wrap(self, bounds: (i32, i32, i32)) -> Self {
-        Self::new(
-            self.x.rem_euclid(bounds.0),
-            self.y.rem_euclid(bounds.1),
-            self.z.rem_euclid(bounds.2),
+    pub fn wrap<const X: usize, const Y: usize, const Z: usize>(self) -> Bound3<X, Y, Z> {
+        Bound3::new(
+            self.x.rem_euclid(X as i32) as usize,
+            self.y.rem_euclid(Y as i32) as usize,
+            self.z.rem_euclid(Z as i32) as usize,
         )
+        .unwrap()
     }
 }
 impl From<(i32, i32, i32)> for Int3 {

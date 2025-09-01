@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::math::{lerp, Bound3, Float, Int3, Vec3};
 
 pub struct Simulation<const X: usize, const Y: usize, const Z: usize> {
@@ -5,15 +7,17 @@ pub struct Simulation<const X: usize, const Y: usize, const Z: usize> {
     velocity: Box<Field<X, Y, Z, Vec3>>,
     pub density: Box<Field<X, Y, Z, Float>>,
     pub constants: Constants,
+    pub particles: Vec<Particle<X, Y, Z>>,
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
-    pub fn new(constants: Constants) -> Self {
+    pub fn new(constants: Constants, particles: Vec<Particle<X, Y, Z>>) -> Self {
         Self {
             distributions: Lattice::default(),
             velocity: Box::new(Field::default()),
             density: Box::new(Field::new_from(1.0)),
             constants,
+            particles,
         }
     }
 
@@ -23,6 +27,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
         let collided_packets = self.collide();
         self.stream(&collided_packets);
         self.calc_conditions();
+        self.stream_particles();
     }
 
     fn collide(&self) -> Box<Lattice<X, Y, Z>> {
@@ -69,8 +74,8 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
                 for y in 0..bounds.1 {
                     for z in 0..(bounds.2) {
                         let loc = Int3::new(x, y, z);
-                        let new_loc = ((loc + direction).wrap(bounds)).try_into().unwrap();
-                        *target.get_mut(new_loc) = *new_dist.get(loc.try_into().unwrap());
+                        *target.get_mut((loc + direction).wrap()) =
+                            *new_dist.get(loc.try_into().unwrap());
                     }
                 }
             }
@@ -107,6 +112,23 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
         // );
         // dbg!(total_momentum);
         // dbg!(total_mass, total_velocity);
+    }
+
+    pub fn stream_particles(&mut self) {
+        // let mut magnitudes = vec![];
+        for particle in &mut self.particles {
+            let flow_velocity = self.velocity.lerp_get(particle.position);
+            // toss in a little fake drag ¯\_(ツ)_/¯ .
+            particle.velocity = self.constants.particle_velocity_decay * particle.velocity
+                + flow_velocity / self.constants.particle_mass;
+
+            particle.position = (particle.position + particle.velocity).wrap((X, Y, Z));
+            // TODO: particles should be able to push back against flow.
+            // magnitudes.push(velocity.dot(velocity).sqrt());
+            // TODO: check magnitude of velocity.
+        }
+        // dbg!(magnitudes.iter().max_by(|a, b| a.total_cmp(b)));
+        // todo!("check velocity magnitude");
     }
 }
 
@@ -243,19 +265,83 @@ impl<const X: usize, const Y: usize, const Z: usize, T: Clone + Copy> Field<X, Y
     pub fn get_mut(&mut self, bounds: Bound3<X, Y, Z>) -> &mut T {
         &mut self.values[bounds.x()][bounds.y()][bounds.z()]
     }
+
+    fn lerp_get(&self, location: Vec3) -> T
+    where
+        Float: std::ops::Mul<T, Output = T>,
+        T: std::iter::Sum,
+    {
+        #[derive(Clone, Copy)]
+        struct Weighted {
+            coord: usize,
+            weight: Float,
+        }
+        fn bounds(coord: Float, wrap: usize) -> impl Iterator<Item = Weighted> {
+            let floor = coord.floor();
+            let floor_dist = coord - floor;
+            let floor = ((floor as i32).rem_euclid(wrap as i32)) as usize;
+            [
+                Weighted {
+                    coord: floor,
+                    weight: (1.0 - floor_dist),
+                },
+                Weighted {
+                    coord: (floor + 1) % wrap,
+                    weight: (floor_dist),
+                },
+            ]
+            .into_iter()
+        }
+        bounds(location.x, X)
+            .flat_map(|x| bounds(location.y, Y).map(move |y| (x, y)))
+            .flat_map(|(x, y)| bounds(location.z, Z).map(move |z| (x, y, z)))
+            .map(|(x, y, z)| {
+                let weight: Float = <Float as std::ops::Mul>::mul(
+                    <Float as std::ops::Mul>::mul(x.weight, y.weight),
+                    z.weight,
+                );
+                let coord = Bound3::new(x.coord, y.coord, z.coord).unwrap();
+                let v: T = weight * *self.get(coord);
+                v
+            })
+            .sum()
+    }
 }
 
 #[derive(Clone, Copy)]
 pub struct Constants {
     pub time_relaxation_constant: Float,
     pub speed_of_sound: Float,
+    pub particle_mass: Float,
+    pub particle_velocity_decay: Float,
 }
 
 impl Default for Constants {
     fn default() -> Self {
         Self {
-            time_relaxation_constant: 0.5,
+            time_relaxation_constant: 1.25,
             speed_of_sound: 1.0 / Float::sqrt(3.0),
+            particle_mass: 1.0,
+            particle_velocity_decay: 0.95,
+        }
+    }
+}
+
+pub struct Particle<const X: usize, const Y: usize, const Z: usize> {
+    pub position: Vec3,
+    pub velocity: Vec3,
+}
+
+impl<const X: usize, const Y: usize, const Z: usize> Particle<X, Y, Z> {
+    pub fn from_rng_bounds<T: Rng>(rng: &mut T) -> Self {
+        Self {
+            position: (
+                rng.random_range(0..X) as f32,
+                rng.random_range(0..Y) as f32,
+                rng.random_range(0..Z) as f32,
+            )
+                .into(),
+            velocity: Vec3::ZERO,
         }
     }
 }

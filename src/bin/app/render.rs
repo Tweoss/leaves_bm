@@ -37,6 +37,11 @@ use bytemuck::{Pod, Zeroable};
 
 const SHADER_ASSET_PATH: &str = "flat.wgsl";
 
+#[derive(Component)]
+pub struct GridPoint;
+#[derive(Component)]
+pub struct ParticlePoint;
+
 #[derive(Component, Deref)]
 pub struct InstanceMaterialData(pub Vec<InstanceData>);
 
