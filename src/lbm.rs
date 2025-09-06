@@ -9,6 +9,21 @@ pub struct Simulation<const X: usize, const Y: usize, const Z: usize> {
     pub constants: Constants,
     pub particles: Vec<Particle<X, Y, Z>>,
 }
+pub struct InitArgs {
+    pub loc: (usize, usize, usize),
+    pub dir: Int3,
+    pub weight: Float,
+}
+impl From<(usize, usize, usize, Int3, Float)> for InitArgs {
+    fn from(value: (usize, usize, usize, Int3, Float)) -> Self {
+        Self {
+            loc: (value.0, value.1, value.2),
+            dir: value.3,
+            weight: value.4,
+        }
+    }
+}
+pub type Initializer = Box<dyn Fn(InitArgs) -> Option<f32>>;
 
 impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
     pub fn new(constants: Constants, particles: Vec<Particle<X, Y, Z>>) -> Self {
@@ -19,6 +34,23 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
             constants,
             particles,
         }
+    }
+
+    pub fn initialize(&mut self, value: Initializer) {
+        self.distributions
+            .iter_mut()
+            .for_each(|(dist, dir, weight)| {
+                for x in 0..X {
+                    for y in 0..Y {
+                        for z in 0..Z {
+                            *dist.get_mut(Bound3::new(x, y, z).unwrap()) =
+                                value((x, y, z, dir, weight).into())
+                                    .unwrap_or(if dir == Int3::ZERO { 1.0 } else { 0.0 });
+                        }
+                    }
+                }
+            });
+        self.calc_conditions();
     }
 
     // https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods#Example_implementation
@@ -114,7 +146,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
         // dbg!(total_mass, total_velocity);
     }
 
-    pub fn stream_particles(&mut self) {
+    fn stream_particles(&mut self) {
         // let mut magnitudes = vec![];
         for particle in &mut self.particles {
             let flow_velocity = self.velocity.lerp_get(particle.position);

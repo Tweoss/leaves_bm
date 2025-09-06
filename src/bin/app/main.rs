@@ -6,7 +6,10 @@ mod render;
 use bevy::{prelude::*, render::view::NoFrustumCulling};
 use bevy_egui::PrimaryEguiContext;
 use bevy_render::view::RenderLayers;
-use leaves_bm::{lbm::Constants, lbm::Simulation, math::Int3, Bound3, Float};
+use leaves_bm::{
+    lbm::{Constants, Initializer, Simulation},
+    Bound3,
+};
 use rand::{rngs::SmallRng, SeedableRng};
 
 use crate::{
@@ -95,14 +98,20 @@ fn setup(
 
 mod init {
     use leaves_bm::{
-        lbm::Particle,
+        lbm::{InitArgs, Particle},
         math::{Int3, Vec3},
     };
     use rand::Rng;
 
     use crate::{PARTICLE_COUNT, X_COUNT, Y_COUNT, Z_COUNT};
 
-    pub fn wave(x: usize, _: usize, _: usize, dir: Int3, _: f32) -> Option<f32> {
+    pub fn wave(
+        InitArgs {
+            loc: (x, _, _),
+            dir,
+            ..
+        }: InitArgs,
+    ) -> Option<f32> {
         let vec: Vec3 = dir.into();
         if x != 0 && x + 1 != X_COUNT {
             return None;
@@ -111,7 +120,13 @@ mod init {
         let magnitude = vec.dot(Vec3::new(if x_f > 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0)) / 20.0;
         (magnitude > 0.0).then_some(magnitude)
     }
-    pub fn circular(x: usize, y: usize, z: usize, dir: Int3, weight: f32) -> Option<f32> {
+    pub fn circular(
+        InitArgs {
+            loc: (x, y, z),
+            dir,
+            weight,
+        }: InitArgs,
+    ) -> Option<f32> {
         let vec: Vec3 = dir.into();
         let x_range = (X_COUNT / 4)..(X_COUNT * 3 / 4);
         let y_range = (Y_COUNT / 4)..(Y_COUNT * 3 / 4);
@@ -131,7 +146,13 @@ mod init {
         let magnitude = vec.dot(Vec3::new(-y_f, x_f, 0.0)) * weight;
         (magnitude > 0.0).then_some(magnitude)
     }
-    pub fn point(x: usize, y: usize, z: usize, dir: Int3, _: f32) -> Option<f32> {
+    pub fn point(
+        InitArgs {
+            loc: (x, y, z),
+            dir,
+            ..
+        }: InitArgs,
+    ) -> Option<f32> {
         if x != X_COUNT / 2 || y != Y_COUNT / 2 || z != Z_COUNT / 2 {
             return None;
         }
@@ -164,9 +185,7 @@ fn step_simulation(
     color_bounds: Res<ColorBounds>,
     constants: Res<egui::Constants>,
 ) {
-    type Init = Box<dyn Fn(usize, usize, usize, Int3, Float) -> Option<f32>>;
-
-    let init_func: Init = match params.function {
+    let init_func: Initializer = match params.function {
         Function::Wave => Box::new(init::wave),
         Function::Circle => Box::new(init::circular),
         Function::Point => Box::new(init::point),
@@ -181,22 +200,7 @@ fn step_simulation(
 
         let mut rng = SmallRng::seed_from_u64(RNG_SEED);
         let mut new_sim = Simulation::new(sim.0.constants, init::particles(&mut rng));
-        new_sim
-            .distributions
-            .iter_mut()
-            .for_each(|(dist, dir, weight)| {
-                for x in 0..X_COUNT {
-                    for y in 0..Y_COUNT {
-                        for z in 0..Z_COUNT {
-                            *dist.get_mut(Bound3::new(x, y, z).unwrap()) =
-                                init_func(x, y, z, dir, weight)
-                                    .map(|v| v * params.scale)
-                                    .unwrap_or(if dir == Int3::ZERO { 1.0 } else { 0.0 });
-                        }
-                    }
-                }
-            });
-        new_sim.calc_conditions();
+        new_sim.initialize(init_func);
 
         *sim = SimulationRes(new_sim);
     }
