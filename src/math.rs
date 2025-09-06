@@ -95,7 +95,7 @@ pub struct Int3 {
 
 impl Int3 {
     pub const ZERO: Self = Int3 { x: 0, y: 0, z: 0 };
-    pub fn new(x: i32, y: i32, z: i32) -> Self {
+    pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
     pub fn wrap<const X: usize, const Y: usize, const Z: usize>(self) -> Bound3<X, Y, Z> {

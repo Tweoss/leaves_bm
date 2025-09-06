@@ -255,7 +255,7 @@ struct SimulationRes(Simulation<X_COUNT, Y_COUNT, Z_COUNT>);
 
 fn main() {
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-    let sim = Simulation::new(
+    let mut sim = Simulation::new(
         Constants {
             // Should be greater than 1 for some reason.
             time_relaxation_constant: 1.25,
@@ -265,6 +265,14 @@ fn main() {
         },
         init::particles(&mut rng),
     );
+
+    sim.initialize(Box::new(init::circular));
+
+    // for _ in 0..1000 {
+    //     sim.step();
+    // }
+
+    // return;
 
     use pan_orbit::{pan_orbit_camera, PanOrbitState};
     use std::time::Duration;

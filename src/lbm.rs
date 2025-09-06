@@ -201,40 +201,38 @@ impl<const X: usize, const Y: usize, const Z: usize> Lattice<X, Y, Z> {
             .map(|(i, dist)| (dist, Self::direction(i), Self::weights(i)))
     }
 
-    fn direction(i: usize) -> Int3 {
+    const fn direction(i: usize) -> Int3 {
         const fn sign(v: i32) -> i32 {
             match v % 2 == 0 {
                 true => 1,
                 false => -1,
             }
         }
-        let directions: [(i32, i32, i32); 19] = std::array::from_fn(|i| {
-            let i = i as i32;
-            match i {
-                0 => (0, 0, 0),
-                1..7 => {
-                    let a = sign(i);
-                    match i {
-                        1..3 => (a, 0, 0),
-                        3..5 => (0, a, 0),
-                        5..7 => (0, 0, a),
-                        _ => unreachable!(),
-                    }
+        let i = i as i32;
+        let (x, y, z) = match i {
+            0 => (0, 0, 0),
+            1..7 => {
+                let a = sign(i);
+                match i {
+                    1..3 => (a, 0, 0),
+                    3..5 => (0, a, 0),
+                    5..7 => (0, 0, a),
+                    _ => unreachable!(),
                 }
-                7..19 => {
-                    let a = sign(i);
-                    let b = sign(i / 2);
-                    match i {
-                        7..11 => (a, b, 0),
-                        11..15 => (a, 0, b),
-                        15..19 => (0, a, b),
-                        _ => unreachable!(),
-                    }
-                }
-                _ => unreachable!(),
             }
-        });
-        directions[i].into()
+            7..19 => {
+                let a = sign(i);
+                let b = sign(i / 2);
+                match i {
+                    7..11 => (a, b, 0),
+                    11..15 => (a, 0, b),
+                    15..19 => (0, a, b),
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
+        };
+        Int3::new(x, y, z)
     }
 
     // https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods#Mathematical_equations_for_simulations
