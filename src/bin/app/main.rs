@@ -19,9 +19,9 @@ use crate::{
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 40;
-const Y_COUNT: usize = 40;
-const Z_COUNT: usize = 3;
+const X_COUNT: usize = 25;
+const Y_COUNT: usize = 25;
+const Z_COUNT: usize = 25;
 const PARTICLE_COUNT: usize = 50;
 const RNG_SEED: u64 = 0xDEADBEEF;
 
@@ -105,6 +105,22 @@ mod init {
 
     use crate::{PARTICLE_COUNT, X_COUNT, Y_COUNT, Z_COUNT};
 
+    pub fn moving_wave(
+        InitArgs {
+            loc: (x, _, _),
+            dir,
+            ..
+        }: InitArgs,
+    ) -> Option<f32> {
+        let vec: Vec3 = dir.into();
+        if x != 0 && x + 1 != X_COUNT {
+            return None;
+        }
+        let x_f = x as f32 - (X_COUNT as f32 / 2.0);
+        let magnitude = vec.dot(Vec3::new(if x_f > 0.0 { 2.0 } else { 0.0 }, 0.0, 0.0)) / 20.0;
+        (magnitude > 0.0).then_some(magnitude)
+    }
+
     pub fn wave(
         InitArgs {
             loc: (x, _, _),
@@ -186,6 +202,7 @@ fn step_simulation(
     constants: Res<egui::Constants>,
 ) {
     let init_func: Initializer = match params.function {
+        Function::MovingWave => Box::new(init::moving_wave),
         Function::Wave => Box::new(init::wave),
         Function::Circle => Box::new(init::circular),
         Function::Point => Box::new(init::point),
@@ -302,7 +319,7 @@ fn main() {
         })
         .insert_resource(egui::Constants::from(sim.constants))
         .insert_resource(SimulationTimer(Timer::new(
-            Duration::from_millis(10),
+            Duration::from_millis(100),
             TimerMode::Repeating,
         )))
         .insert_resource(UiState::new())

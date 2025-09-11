@@ -33,6 +33,7 @@ pub struct InitParams {
 
 #[derive(PartialEq)]
 pub enum Function {
+    MovingWave,
     Wave,
     Circle,
     Point,
@@ -229,8 +230,9 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                 if let Some(mut params) = self.world.get_resource_mut::<InitParams>() {
                     let function = &mut params.function;
                     ui.label("Init Function");
-                    ui.radio_value(function, Function::Wave, "Wave");
                     ui.radio_value(function, Function::Circle, "Circle");
+                    ui.radio_value(function, Function::MovingWave, "Moving Wave");
+                    ui.radio_value(function, Function::Wave, "Wave");
                     ui.radio_value(function, Function::Point, "Point");
 
                     ui.add(
