@@ -1,2 +1,2 @@
 run:
-    cargo run --features bevy/dynamic_linking
+    cargo run --release

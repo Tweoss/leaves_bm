@@ -13,15 +13,15 @@ use leaves_bm::{
 use rand::{rngs::SmallRng, SeedableRng};
 
 use crate::{
-    egui::{ColorBounds, Function, InitParams, SimControls, UiState},
+    egui::{ColorBounds, Function, InitParams, Probe, SimControls, UiState},
     keyboard::handle_keystrokes,
     pan_orbit::spawn_camera,
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 25;
-const Y_COUNT: usize = 25;
-const Z_COUNT: usize = 25;
+const X_COUNT: usize = 35;
+const Y_COUNT: usize = 35;
+const Z_COUNT: usize = 35;
 const PARTICLE_COUNT: usize = 50;
 const RNG_SEED: u64 = 0xDEADBEEF;
 
@@ -70,7 +70,7 @@ fn setup(
                             Y_COUNT as f32 / 2.0 - y,
                             Z_COUNT as f32 / 2.0 - z,
                         ),
-                        scale: 1.0,
+                        scale: 2.0,
                         color: LinearRgba::from(Color::WHITE).to_f32_array(),
                     }
                 })
@@ -113,11 +113,10 @@ mod init {
         }: InitArgs,
     ) -> Option<f32> {
         let vec: Vec3 = dir.into();
-        if x != 0 && x + 1 != X_COUNT {
+        if x != 0 {
             return None;
         }
-        let x_f = x as f32 - (X_COUNT as f32 / 2.0);
-        let magnitude = vec.dot(Vec3::new(if x_f > 0.0 { 2.0 } else { 0.0 }, 0.0, 0.0)) / 20.0;
+        let magnitude = vec.dot(Vec3::new(2.0, 0.0, 0.0)) / 20.0;
         (magnitude > 0.0).then_some(magnitude)
     }
 
@@ -200,6 +199,7 @@ fn step_simulation(
     >,
     color_bounds: Res<ColorBounds>,
     constants: Res<egui::Constants>,
+    probe: Res<Probe>,
 ) {
     let init_func: Initializer = match params.function {
         Function::MovingWave => Box::new(init::moving_wave),
@@ -216,10 +216,16 @@ fn step_simulation(
         controls.restart_requested = false;
 
         let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-        let mut new_sim = Simulation::new(sim.0.constants, init::particles(&mut rng));
+        let mut new_sim = Simulation::new(sim.0.constants, init::particles(&mut rng), vec![]);
         new_sim.initialize(init_func);
 
         *sim = SimulationRes(new_sim);
+    }
+
+    if controls.single_step {
+        rerender = true;
+        sim.0.small_step();
+        controls.single_step = false;
     }
 
     if !controls.paused && timer.0.tick(time.delta()).just_finished() {
@@ -228,11 +234,7 @@ fn step_simulation(
         use std::time::Instant;
         let start = Instant::now();
         sim.0.step();
-        dbg!(Instant::now().duration_since(start));
-        if controls.single_step {
-            controls.paused = true;
-            controls.single_step = false;
-        }
+        // dbg!(Instant::now().duration_since(start));
     }
 
     rerender |= color_bounds.is_changed();
@@ -244,10 +246,18 @@ fn step_simulation(
             let z = i % Z_COUNT;
             let y = (i / Z_COUNT) % Y_COUNT;
             let x = i / Z_COUNT / Y_COUNT;
+
             let value = (*sim.0.density.get(Bound3::new(x, y, z).unwrap()) - color_bounds.min)
                 / (color_bounds.max - color_bounds.min);
             let value = value.min(1.0);
             data.color = [value, value, value, 1.0];
+
+            if probe.x == x && probe.y == y && probe.z == z {
+                data.color[1] = 1.0;
+                data.color[0] = 0.0;
+                continue;
+            }
+
             if value == 1.0 {
                 data.color = [1.0, 0.0, 0.0, 1.0]
             }
@@ -281,6 +291,7 @@ fn main() {
             particle_velocity_decay: 0.2,
         },
         init::particles(&mut rng),
+        vec![],
     );
 
     sim.initialize(Box::new(init::circular));
@@ -308,18 +319,19 @@ fn main() {
         .add_plugins(bevy_egui::EguiPlugin::default())
         .add_plugins(bevy_inspector_egui::DefaultInspectorConfigPlugin)
         .insert_resource(ColorBounds { min: 1.0, max: 1.5 })
+        .insert_resource(Probe { x: 6, y: 0, z: 0 })
         .insert_resource(SimControls {
             restart_requested: true,
             single_step: false,
-            paused: false,
+            paused: true,
         })
         .insert_resource(InitParams {
-            function: Function::Circle,
+            function: Function::MovingWave,
             scale: 1.0,
         })
         .insert_resource(egui::Constants::from(sim.constants))
         .insert_resource(SimulationTimer(Timer::new(
-            Duration::from_millis(100),
+            Duration::from_millis(10),
             TimerMode::Repeating,
         )))
         .insert_resource(UiState::new())

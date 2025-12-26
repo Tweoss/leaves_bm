@@ -16,7 +16,11 @@ use bevy_inspector_egui::{
 };
 use bevy_render::camera::Viewport;
 use bevy_window::PrimaryWindow;
+use egui::{FontId, RichText, Widget};
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
+use leaves_bm::Bound3;
+
+use crate::{SimulationRes, X_COUNT, Y_COUNT, Z_COUNT};
 
 #[derive(Resource)]
 pub struct SimControls {
@@ -86,6 +90,13 @@ impl From<Constants> for leaves_bm::lbm::Constants {
             particle_velocity_decay,
         }
     }
+}
+
+#[derive(Resource)]
+pub struct Probe {
+    pub x: usize,
+    pub y: usize,
+    pub z: usize,
 }
 
 pub fn show_ui_system(world: &mut World) {
@@ -224,7 +235,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                     ui.checkbox(&mut controls.paused, "Paused");
                     if ui.button("Single Step").clicked() {
                         controls.single_step = true;
-                        controls.paused = false;
                     }
                 }
                 if let Some(mut params) = self.world.get_resource_mut::<InitParams>() {
@@ -276,6 +286,43 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                             .logarithmic(true),
                     );
                 }
+
+                let probe = self.world.get_resource::<Probe>();
+                let values = self.world.get_resource().map(|s: &SimulationRes| {
+                    if let Some(probe) = probe {
+                        s.0.distributions
+                            .iter()
+                            .map(|(d, dir, _)| {
+                                let v = d.get(Bound3::new(probe.x, probe.y, probe.z).unwrap());
+                                format!("[{:+} {:+} {:+}] = {:.4}", dir.x, dir.y, dir.z, v)
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        vec![]
+                    }
+                });
+                self.world.get_resource::<SimulationRes>().map(|s| {
+                    ui.label(format!(
+                        "Step: {}",
+                        s.0.sim_step
+                            .as_ref()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default()
+                    ))
+                });
+                if let Some(mut probe) = self.world.get_resource_mut::<Probe>() {
+                    ui.add(egui::Slider::new(&mut probe.x, 0..=(X_COUNT - 1)).text("X probe"));
+                    ui.add(egui::Slider::new(&mut probe.y, 0..=(Y_COUNT - 1)).text("Y probe"));
+                    ui.add(egui::Slider::new(&mut probe.z, 0..=(Z_COUNT - 1)).text("Z probe"));
+                    if let Some(values) = values {
+                        ui.label("values");
+
+                        for v in values {
+                            egui::Label::new(RichText::new(v).font(FontId::monospace(12.0))).ui(ui);
+                        }
+                    }
+                }
+
                 match *self.selection {
                     InspectorSelection::Entities => match self.selected_entities.as_slice() {
                         &[entity] => ui_for_entity_with_children(self.world, entity, ui),

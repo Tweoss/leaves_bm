@@ -1,13 +1,22 @@
+mod iteration;
+
+use std::fmt::Display;
+
 use rand::Rng;
 
-use crate::math::{lerp, Bound3, Float, Int3, Vec3};
+use crate::{
+    math::{lerp, Bound3, Float, Int3, Vec3},
+    mesh::{Mesh, Triangle},
+};
 
 pub struct Simulation<const X: usize, const Y: usize, const Z: usize> {
     pub distributions: Lattice<X, Y, Z>,
-    velocity: Box<Field<X, Y, Z, Vec3>>,
+    pub velocity: Box<Field<X, Y, Z, Vec3>>,
     pub density: Box<Field<X, Y, Z, Float>>,
     pub constants: Constants,
     pub particles: Vec<Particle<X, Y, Z>>,
+    pub meshes: Vec<Mesh>,
+    pub sim_step: Option<SimStep<X, Y, Z>>,
 }
 pub struct InitArgs {
     pub loc: (usize, usize, usize),
@@ -25,14 +34,36 @@ impl From<(usize, usize, usize, Int3, Float)> for InitArgs {
 }
 pub type Initializer = Box<dyn Fn(InitArgs) -> Option<f32>>;
 
+pub enum SimStep<const X: usize, const Y: usize, const Z: usize> {
+    Collide,
+    BoundaryCondition,
+    Stream,
+    CalcMacro,
+    StreamParticles,
+}
+
+impl<const X: usize, const Y: usize, const Z: usize> Display for SimStep<X, Y, Z> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            SimStep::Collide => "Collide",
+            SimStep::BoundaryCondition => "BoundaryCondition",
+            SimStep::Stream => "Stream",
+            SimStep::CalcMacro => "CalcMacro",
+            SimStep::StreamParticles => "StreamParticles",
+        })
+    }
+}
+
 impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
-    pub fn new(constants: Constants, particles: Vec<Particle<X, Y, Z>>) -> Self {
+    pub fn new(constants: Constants, particles: Vec<Particle<X, Y, Z>>, meshes: Vec<Mesh>) -> Self {
         Self {
             distributions: Lattice::default(),
             velocity: Box::new(Field::default()),
             density: Box::new(Field::new_from(1.0)),
             constants,
             particles,
+            meshes,
+            sim_step: None,
         }
     }
 
@@ -56,13 +87,43 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
     // https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods#Example_implementation
     // but in 3D
     pub fn step(&mut self) {
-        let collided_packets = self.collide();
-        self.stream(&collided_packets);
-        self.calc_conditions();
-        self.stream_particles();
+        // let mut collided_packets = self.collide();
+        // // TODO: calculate for boundary positions
+        // self.update_boundary(&mut collided_packets);
+        // self.stream(&collided_packets);
+        // self.calc_conditions();
+        // self.stream_particles();
+        while !matches!(self.small_step(), SimStep::Collide) {}
     }
 
-    fn collide(&self) -> Box<Lattice<X, Y, Z>> {
+    pub fn small_step(&mut self) -> &SimStep<X, Y, Z> {
+        let sim_step = self.sim_step.take().unwrap_or(SimStep::Collide);
+        match sim_step {
+            SimStep::Collide => {
+                self.collide();
+                self.sim_step = Some(SimStep::BoundaryCondition);
+            }
+            SimStep::BoundaryCondition => {
+                self.update_boundary();
+                self.sim_step = Some(SimStep::Stream)
+            }
+            SimStep::Stream => {
+                self.stream();
+                self.sim_step = Some(SimStep::CalcMacro)
+            }
+            SimStep::CalcMacro => {
+                self.calc_conditions();
+                self.sim_step = Some(SimStep::StreamParticles)
+            }
+            SimStep::StreamParticles => {
+                self.stream_particles();
+                self.sim_step = Some(SimStep::Collide)
+            }
+        }
+        self.sim_step.as_ref().unwrap()
+    }
+
+    fn collide(&mut self) {
         let mut new_packets = Box::new(Lattice::default());
         for ((distribution, direction, weight), (new_dist, _, _)) in
             self.distributions.iter().zip(new_packets.iter_mut())
@@ -94,10 +155,70 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
                 }
             }
         }
-        new_packets
+        self.distributions = *new_packets;
     }
 
-    fn stream(&mut self, collided_packets: &Lattice<X, Y, Z>) {
+    fn update_boundary(&mut self) {
+        let bounds = (X, Y, Z);
+        // For each point and each packet distribution
+        // - if that direction from that point crosses a mesh plane
+        //   - calculate the proportion of the link before the plane
+        //   - calculate the mesh speed at/around that point
+        //   - go to the target cell and calculate the backwards packet dist
+        //   - overwrite the target cell packet dist (not add)
+        //
+        //
+        let triangle = Triangle::new(
+            Vec3::new(X as Float / 2.0, 0.0, 0.0),
+            Vec3::new(X as Float / 2.0, Y as Float, 0.0),
+            Vec3::new(X as Float / 2.0, Y as Float, Z as Float),
+        );
+        for x in 0..bounds.0 {
+            for y in 0..bounds.1 {
+                for z in 0..bounds.2 {
+                    for [(dist1, dir1, _), (dist2, dir2, _)] in self.distributions.iter_pairs() {
+                        let p0 = Vec3::new(x as Float, y as Float, z as Float);
+                        let p1 = p0 + dir1.into();
+                        // Testing condition
+                        if x == 5 && dir1.x == 1 {
+                            let loc = Int3::new(x as i32, y as i32, z as i32);
+                            // if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
+                            // Swap the values in the two distributions (assumes
+                            // the opposite direction will also intersect).
+                            let s = loc.wrap();
+                            let d = (loc + dir1).wrap();
+                            std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
+                        }
+                        if x == 5 && dir2.x == 1 {
+                            let loc = Int3::new(x as i32, y as i32, z as i32);
+                            let s = loc.wrap();
+                            let d = (loc + dir2).wrap();
+                            std::mem::swap(dist1.get_mut(d), dist2.get_mut(s));
+                        }
+
+                        if y == 5 && dir1.y == 1 {
+                            let loc = Int3::new(x as i32, y as i32, z as i32);
+                            // if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
+                            // Swap the values in the two distributions (assumes
+                            // the opposite direction will also intersect).
+                            let s = loc.wrap();
+                            let d = (loc + dir1).wrap();
+                            std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
+                        }
+                        if y == 5 && dir2.y == 1 {
+                            let loc = Int3::new(x as i32, y as i32, z as i32);
+                            let s = loc.wrap();
+                            let d = (loc + dir2).wrap();
+                            std::mem::swap(dist1.get_mut(d), dist2.get_mut(s));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn stream(&mut self) {
+        let collided_packets = self.distributions.clone();
         for ((new_dist, direction, _), (target, _, _)) in
             collided_packets.iter().zip(self.distributions.iter_mut())
         {
@@ -164,6 +285,7 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
     }
 }
 
+#[derive(Clone)]
 pub struct Lattice<const X: usize, const Y: usize, const Z: usize> {
     pub q0: Box<PacketDistribution<X, Y, Z>>,
     pub q1: Box<[PacketDistribution<X, Y, Z>; 6]>,
@@ -182,71 +304,8 @@ impl<const X: usize, const Y: usize, const Z: usize> Default for Lattice<X, Y, Z
     }
 }
 
-impl<const X: usize, const Y: usize, const Z: usize> Lattice<X, Y, Z> {
-    pub fn iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (&mut PacketDistribution<X, Y, Z>, Int3, Float)> {
-        std::iter::once(self.q0.as_mut())
-            .chain(self.q1.iter_mut())
-            .chain(self.q2.iter_mut())
-            .enumerate()
-            .map(|(i, dist)| (dist, Self::direction(i), Self::weights(i)))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&PacketDistribution<X, Y, Z>, Int3, Float)> {
-        std::iter::once(self.q0.as_ref())
-            .chain(self.q1.iter())
-            .chain(self.q2.iter())
-            .enumerate()
-            .map(|(i, dist)| (dist, Self::direction(i), Self::weights(i)))
-    }
-
-    const fn direction(i: usize) -> Int3 {
-        const fn sign(v: i32) -> i32 {
-            match v % 2 == 0 {
-                true => 1,
-                false => -1,
-            }
-        }
-        let i = i as i32;
-        let (x, y, z) = match i {
-            0 => (0, 0, 0),
-            1..7 => {
-                let a = sign(i);
-                match i {
-                    1..3 => (a, 0, 0),
-                    3..5 => (0, a, 0),
-                    5..7 => (0, 0, a),
-                    _ => unreachable!(),
-                }
-            }
-            7..19 => {
-                let a = sign(i);
-                let b = sign(i / 2);
-                match i {
-                    7..11 => (a, b, 0),
-                    11..15 => (a, 0, b),
-                    15..19 => (0, a, b),
-                    _ => unreachable!(),
-                }
-            }
-            _ => unreachable!(),
-        };
-        Int3::new(x, y, z)
-    }
-
-    // https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods#Mathematical_equations_for_simulations
-    fn weights(i: usize) -> Float {
-        1.0 / (match i {
-            0 => 3.0,
-            1..7 => 18.0,
-            7..19 => 36.0,
-            _ => unreachable!(),
-        })
-    }
-}
-
 /// The packet distributions at each point in the lattice in a specific direction.
+#[derive(Clone)]
 pub struct PacketDistribution<const X: usize, const Y: usize, const Z: usize> {
     values: [Box<[[Float; Z]; Y]>; X],
 }
