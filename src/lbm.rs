@@ -173,44 +173,61 @@ impl<const X: usize, const Y: usize, const Z: usize> Simulation<X, Y, Z> {
             Vec3::new(X as Float / 2.0, Y as Float, 0.0),
             Vec3::new(X as Float / 2.0, Y as Float, Z as Float),
         );
+        let triangle2 = Triangle::new(
+            Vec3::new(X as Float / 2.0, 0.0, 0.0),
+            Vec3::new(X as Float / 2.0, Y as Float, Z as Float),
+            Vec3::new(X as Float / 2.0, 0.0, Z as Float),
+        );
         for x in 0..bounds.0 {
             for y in 0..bounds.1 {
                 for z in 0..bounds.2 {
                     for [(dist1, dir1, _), (dist2, dir2, _)] in self.distributions.iter_pairs() {
                         let p0 = Vec3::new(x as Float, y as Float, z as Float);
                         let p1 = p0 + dir1.into();
-                        // Testing condition
-                        if x == 5 && dir1.x == 1 {
+                        if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
                             let loc = Int3::new(x as i32, y as i32, z as i32);
-                            // if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
-                            // Swap the values in the two distributions (assumes
-                            // the opposite direction will also intersect).
+                            let s = loc.wrap();
+                            let d = (loc + dir1).wrap();
+                            std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
+                            continue;
+                        }
+                        if let Some(proportion) = triangle2.intersect_proportion(p0, p1) {
+                            let loc = Int3::new(x as i32, y as i32, z as i32);
                             let s = loc.wrap();
                             let d = (loc + dir1).wrap();
                             std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
                         }
-                        if x == 5 && dir2.x == 1 {
-                            let loc = Int3::new(x as i32, y as i32, z as i32);
-                            let s = loc.wrap();
-                            let d = (loc + dir2).wrap();
-                            std::mem::swap(dist1.get_mut(d), dist2.get_mut(s));
-                        }
+                        // if x == 5 && dir1.x == 1 {
+                        //     let loc = Int3::new(x as i32, y as i32, z as i32);
+                        //     // if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
+                        //     // Swap the values in the two distributions (assumes
+                        //     // the opposite direction will also intersect).
+                        //     let s = loc.wrap();
+                        //     let d = (loc + dir1).wrap();
+                        //     std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
+                        // }
+                        // if x == 5 && dir2.x == 1 {
+                        //     let loc = Int3::new(x as i32, y as i32, z as i32);
+                        //     let s = loc.wrap();
+                        //     let d = (loc + dir2).wrap();
+                        //     std::mem::swap(dist1.get_mut(d), dist2.get_mut(s));
+                        // }
 
-                        if y == 5 && dir1.y == 1 {
-                            let loc = Int3::new(x as i32, y as i32, z as i32);
-                            // if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
-                            // Swap the values in the two distributions (assumes
-                            // the opposite direction will also intersect).
-                            let s = loc.wrap();
-                            let d = (loc + dir1).wrap();
-                            std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
-                        }
-                        if y == 5 && dir2.y == 1 {
-                            let loc = Int3::new(x as i32, y as i32, z as i32);
-                            let s = loc.wrap();
-                            let d = (loc + dir2).wrap();
-                            std::mem::swap(dist1.get_mut(d), dist2.get_mut(s));
-                        }
+                        // if y == 5 && dir1.y == 1 {
+                        //     let loc = Int3::new(x as i32, y as i32, z as i32);
+                        //     // if let Some(proportion) = triangle.intersect_proportion(p0, p1) {
+                        //     // Swap the values in the two distributions (assumes
+                        //     // the opposite direction will also intersect).
+                        //     let s = loc.wrap();
+                        //     let d = (loc + dir1).wrap();
+                        //     std::mem::swap(dist1.get_mut(s), dist2.get_mut(d));
+                        // }
+                        // if y == 5 && dir2.y == 1 {
+                        //     let loc = Int3::new(x as i32, y as i32, z as i32);
+                        //     let s = loc.wrap();
+                        //     let d = (loc + dir2).wrap();
+                        //     std::mem::swap(dist1.get_mut(d), dist2.get_mut(s));
+                        // }
                     }
                 }
             }

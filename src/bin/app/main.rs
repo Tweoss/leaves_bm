@@ -19,9 +19,9 @@ use crate::{
     render::{CustomMaterialPlugin, InstanceData, InstanceMaterialData},
 };
 
-const X_COUNT: usize = 35;
-const Y_COUNT: usize = 35;
-const Z_COUNT: usize = 35;
+const X_COUNT: usize = 25;
+const Y_COUNT: usize = 25;
+const Z_COUNT: usize = 25;
 const PARTICLE_COUNT: usize = 50;
 const RNG_SEED: u64 = 0xDEADBEEF;
 
@@ -70,7 +70,7 @@ fn setup(
                             Y_COUNT as f32 / 2.0 - y,
                             Z_COUNT as f32 / 2.0 - z,
                         ),
-                        scale: 2.0,
+                        scale: 1.0,
                         color: LinearRgba::from(Color::WHITE).to_f32_array(),
                     }
                 })
@@ -234,7 +234,7 @@ fn step_simulation(
         use std::time::Instant;
         let start = Instant::now();
         sim.0.step();
-        // dbg!(Instant::now().duration_since(start));
+        dbg!(Instant::now().duration_since(start));
     }
 
     rerender |= color_bounds.is_changed();
@@ -331,7 +331,7 @@ fn main() {
         })
         .insert_resource(egui::Constants::from(sim.constants))
         .insert_resource(SimulationTimer(Timer::new(
-            Duration::from_millis(10),
+            Duration::from_millis(50),
             TimerMode::Repeating,
         )))
         .insert_resource(UiState::new())
